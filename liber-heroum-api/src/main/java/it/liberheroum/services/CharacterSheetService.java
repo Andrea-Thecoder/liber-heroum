@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -35,6 +36,8 @@ public class CharacterSheetService {
     private final DocumentService documentService;
     private final CharacterSheetConfig config;
     private final OwnedResources ownedResources;
+    private final DocumentSlots documentSlots;
+    private final PessimisticLocks pessimisticLocks;
 
     public PagedResultDTO<BaseCharacterSheetDTO> findAllCharacterSheetsByCharacter(UUID characterId,
                                                                                     CharacterSheetSearchRequest request) {
@@ -60,7 +63,7 @@ public class CharacterSheetService {
         apply(sheet, request.title(), request.system());
         Document document = null;
         try (Transaction transaction = database.beginTransaction()) {
-            lockGameCharacter(character.getId());
+            pessimisticLocks.lockGameCharacter(character.getId());
             int count = database.find(CharacterSheet.class)
                     .setLabel("createCharacterSheet")
                     .where().eq("character.id", character.getId())
@@ -94,43 +97,14 @@ public class CharacterSheetService {
 
     public DetailCharacterSheetDTO updateCharacterSheetFile(UUID id, MultipartFile file) {
         CharacterSheet sheet = getCharacterSheetByIdAndOwner(id);
-        Document previous = sheet.getDocument();
-        Document replacement = null;
-        try (Transaction transaction = database.beginTransaction()) {
-            replacement = documentService.createPdfDocument(file);
-            sheet.setDocument(replacement);
-            database.save(sheet);
-            documentService.deleteDocumentRecord(previous);
-            transaction.commit();
-        } catch (RuntimeException e) {
-            documentService.deleteDocumentFile(replacement);
-            throw e;
-        }
-        documentService.deleteDocumentFile(previous);
+        documentSlots.replace(sheet, sheet.getDocument(), sheet::setDocument,
+                () -> documentService.createPdfDocument(file));
         return toDetailCharacterSheetDTO(sheet);
     }
 
     public void deleteCharacterSheet(UUID id) {
         CharacterSheet sheet = getCharacterSheetByIdAndOwner(id);
-        Document document = sheet.getDocument();
-        try (Transaction transaction = database.beginTransaction()) {
-            database.delete(sheet);
-            documentService.deleteDocumentRecord(document);
-            transaction.commit();
-        }
-        documentService.deleteDocumentFile(document);
-    }
-
-    private void lockGameCharacter(UUID id) {
-        GameCharacter locked = database.find(GameCharacter.class)
-                .setLabel("lockGameCharacter")
-                .select("id")
-                .forUpdate()
-                .where().idEq(id)
-                .findOne();
-        if (locked == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Character not found");
-        }
+        documentSlots.deleteWithDocuments(List.of(sheet.getDocument()), () -> database.delete(sheet));
     }
 
     private CharacterSheet getCharacterSheetByIdAndOwner(UUID id) {

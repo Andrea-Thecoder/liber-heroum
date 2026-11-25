@@ -346,7 +346,7 @@ class AppUserIT extends AbstractIntegrationTest {
             + "name, kind, created_by, updated_by) values (?, ?, now(), now(), 1, 'Racing', 'PLAYER', 'test', 'test')";
 
     @Test
-    void deleteAppUser_characterAddedBeforeCommit_returnsConflictWithRetryMessageAndKeepsUser() {
+    void deleteAppUser_characterAddedWhileWaitingForLock_returnsOkAndDeletesAlsoTheNewCharacter() {
         UUID userId = createAppUser();
         MvcTestResult result;
         try (BlockingTransaction creation = BlockingTransaction.begin(jdbc).execute(INSERT_CHARACTER, UUID.randomUUID(), userId)) {
@@ -356,8 +356,7 @@ class AppUserIT extends AbstractIntegrationTest {
             result = delete.join();
         }
 
-        assertThat(result).hasStatus(HttpStatus.CONFLICT).bodyJson().extractingPath("$.violations[0].message")
-                .isEqualTo("The account changed while it was being deleted, try again");
-        assertThat(countRows("app_user")).isEqualTo(1);
+        assertThat(result).hasStatusOk();
+        assertThat(List.of(countRows("app_user"), countRows("game_character"))).containsOnly(0);
     }
 }

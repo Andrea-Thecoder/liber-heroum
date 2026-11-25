@@ -16,9 +16,7 @@ import it.liberheroum.model.DiaryPageTag;
 import it.liberheroum.security.JwtInspector;
 import jakarta.persistence.PersistenceException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -40,6 +38,7 @@ public class DiaryPageTagService {
     private final Database database;
     private final JwtInspector jwtInspector;
     private final OwnedResources ownedResources;
+    private final PessimisticLocks pessimisticLocks;
 
     public PagedResultDTO<BaseDiaryTagDTO> findAllDiaryTagsByDiary(UUID diaryId, DiaryTagSearchRequest request) {
         ownedResources.getDiaryByIdAndOwner(diaryId);
@@ -83,9 +82,7 @@ public class DiaryPageTagService {
         String requested = request.tag() == null ? null : request.tag().trim();
         String result;
         try (Transaction transaction = database.beginTransaction()) {
-            // Il diario e' bloccato come in DiaryPageService: serializza i cambi dei tag, protegge il limite dei 10 tag
-            // e impedisce che la pagina venga cancellata mentre si salva il tag.
-            Diary diary = lockDiaryByOwner(diaryId);
+            Diary diary = pessimisticLocks.lockDiary(diaryId, "Page not found");
             ownedResources.getDiaryPageReferenceByIdAndOwner(pageId);
             DiaryPageTag current = database.find(DiaryPageTag.class)
                     .setLabel("updateDiaryPageTag")
@@ -123,20 +120,6 @@ public class DiaryPageTagService {
         return new DetailDiaryPageTagDTO(result);
     }
 
-    public void deleteDiaryPageTagsByPage(UUID pageId) {
-        database.find(DiaryPageTag.class)
-                .setLabel("deleteDiaryPageTagsByPage")
-                .where().eq("page.id", pageId)
-                .delete();
-    }
-
-    public void deleteDiaryPageTagsByDiaries(Collection<UUID> diaryIds) {
-        database.find(DiaryPageTag.class)
-                .setLabel("deleteDiaryPageTagsByDiaries")
-                .where().in("diary.id", diaryIds)
-                .delete();
-    }
-
     /** Tag del diario usati da pagine diverse da quella data, per chiave (nome in minuscolo) con la grafia salvata. */
     private Map<String, String> findOtherTagsOfDiary(UUID diaryId, UUID pageId) {
         return database.find(DiaryPageTag.class)
@@ -150,18 +133,5 @@ public class DiaryPageTagService {
 
     private static String key(String name) {
         return name.toLowerCase(Locale.ROOT);
-    }
-
-    private Diary lockDiaryByOwner(UUID id) {
-        Diary locked = database.find(Diary.class)
-                .setLabel("lockDiaryByOwner")
-                .select("id")
-                .forUpdate()
-                .where().idEq(id).eq("character.owner.keycloakId", jwtInspector.getSubject())
-                .findOne();
-        if (locked == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Page not found");
-        }
-        return locked;
     }
 }

@@ -156,8 +156,8 @@ class SchemaIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void gameCharacterOwnerForeignKey_schema_restrictsDelete() {
-        assertThat(deleteRuleOf("fk_game_character_owner_id")).isEqualTo("r");
+    void gameCharacterOwnerForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_game_character_owner_id")).isEqualTo("c");
     }
 
     @Test
@@ -176,8 +176,18 @@ class SchemaIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void characterSheetCharacterForeignKey_schema_restrictsDelete() {
-        assertThat(deleteRuleOf("fk_character_sheet_character_id")).isEqualTo("r");
+    void characterSheetCharacterForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_character_sheet_character_id")).isEqualTo("c");
+    }
+
+    @Test
+    void diaryCharacterForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_diary_character_id")).isEqualTo("c");
+    }
+
+    @Test
+    void diaryPageDiaryForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_diary_page_diary_id")).isEqualTo("c");
     }
 
     @Test
@@ -191,13 +201,13 @@ class SchemaIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void diaryPageTagDiaryForeignKey_schema_restrictsDelete() {
-        assertThat(deleteRuleOf("fk_diary_page_tag_diary_id")).isEqualTo("r");
+    void diaryPageTagDiaryForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_diary_page_tag_diary_id")).isEqualTo("c");
     }
 
     @Test
-    void diaryPageTagPageForeignKey_schema_restrictsDelete() {
-        assertThat(deleteRuleOf("fk_diary_page_tag_page_id_diary_id")).isEqualTo("r");
+    void diaryPageTagPageForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_diary_page_tag_page_id_diary_id")).isEqualTo("c");
     }
 
     @Test

@@ -2,7 +2,6 @@ package it.liberheroum.services;
 
 import io.ebean.Database;
 import io.ebean.ExpressionList;
-import io.ebean.Transaction;
 import it.liberheroum.dto.PagedResultDTO;
 import it.liberheroum.dto.diary.BaseDiaryDTO;
 import it.liberheroum.dto.diary.BookmarkDiaryDTO;
@@ -15,7 +14,6 @@ import it.liberheroum.exception.SqlStates;
 import it.liberheroum.model.Diary;
 import it.liberheroum.model.DiaryPage;
 import it.liberheroum.model.DiaryPageTag;
-import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
 import it.liberheroum.security.JwtInspector;
 import jakarta.persistence.PersistenceException;
@@ -36,8 +34,9 @@ public class DiaryService {
     private final Database database;
     private final JwtInspector jwtInspector;
     private final DocumentService documentService;
-    private final DiaryPageTagService tagService;
     private final OwnedResources ownedResources;
+    private final DocumentSlots documentSlots;
+    private final PessimisticLocks pessimisticLocks;
 
     public PagedResultDTO<BaseDiaryDTO> findAllDiariesByCharacter(UUID characterId, DiarySearchRequest request) {
         GameCharacter character = ownedResources.getGameCharacterByIdAndOwner(characterId);
@@ -91,32 +90,14 @@ public class DiaryService {
 
     public DetailDiaryDTO updateDiaryCover(UUID id, MultipartFile file) {
         Diary diary = ownedResources.getDiaryWithCoverByIdAndOwner(id);
-        Document previous = diary.getCoverDocument();
-        Document cover = null;
-        try (Transaction transaction = database.beginTransaction()) {
-            cover = documentService.createImageDocument(file);
-            diary.setCoverDocument(cover);
-            database.save(diary);
-            documentService.deleteDocumentRecord(previous);
-            transaction.commit();
-        } catch (RuntimeException e) {
-            documentService.deleteDocumentFile(cover);
-            throw e;
-        }
-        documentService.deleteDocumentFile(previous);
+        documentSlots.replace(diary, diary.getCoverDocument(), diary::setCoverDocument,
+                () -> documentService.createImageDocument(file));
         return toDetailDiaryDTO(diary);
     }
 
     public void deleteDiaryCover(UUID id) {
         Diary diary = ownedResources.getDiaryWithCoverByIdAndOwner(id);
-        Document previous = diary.getCoverDocument();
-        try (Transaction transaction = database.beginTransaction()) {
-            diary.setCoverDocument(null);
-            database.save(diary);
-            documentService.deleteDocumentRecord(previous);
-            transaction.commit();
-        }
-        documentService.deleteDocumentFile(previous);
+        documentSlots.clear(diary, diary.getCoverDocument(), diary::setCoverDocument);
     }
 
     public BookmarkDiaryDTO getDiaryBookmark(UUID id) {
@@ -159,36 +140,17 @@ public class DiaryService {
     }
 
     public void deleteDiary(UUID id) {
-        Diary diary = ownedResources.getDiaryWithCoverByIdAndOwner(id);
-        Document cover = diary.getCoverDocument();
-        try (Transaction transaction = database.beginTransaction()) {
-            lockDiary(diary.getId());
-            tagService.deleteDiaryPageTagsByDiaries(List.of(diary.getId()));
-            database.find(DiaryPage.class)
-                    .setLabel("deleteDiary")
-                    .where().eq("diary.id", diary.getId())
-                    .delete();
-            database.delete(diary);
-            documentService.deleteDocumentRecord(cover);
-            transaction.commit();
+        Diary diary = ownedResources.getDiaryByIdAndOwner(id);
+        try {
+            documentSlots.deleteWithDocuments(
+                    () -> pessimisticLocks.lockDiary(diary.getId()),
+                    () -> documentSlots.findDocumentsOfDiaries(List.of(diary.getId())),
+                    () -> database.delete(diary));
         } catch (PersistenceException e) {
             if (SqlStates.isForeignKeyViolation(e)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "The diary changed while it was being deleted, try again");
             }
             throw e;
-        }
-        documentService.deleteDocumentFile(cover);
-    }
-
-    private void lockDiary(UUID id) {
-        Diary locked = database.find(Diary.class)
-                .setLabel("lockDiary")
-                .select("id")
-                .forUpdate()
-                .where().idEq(id)
-                .findOne();
-        if (locked == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Diary not found");
         }
     }
 

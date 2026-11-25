@@ -1,5 +1,7 @@
 package it.liberheroum.model;
 
+import io.ebean.annotation.ConstraintMode;
+import io.ebean.annotation.DbForeignKey;
 import io.ebean.annotation.Index;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -27,6 +29,7 @@ public class CharacterSheet extends AbstractAuditable {
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "character_id", nullable = false)
+    @DbForeignKey(onDelete = ConstraintMode.CASCADE)
     private GameCharacter character;
 
     @ManyToOne(optional = false)

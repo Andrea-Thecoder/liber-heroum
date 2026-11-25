@@ -42,6 +42,7 @@ public class DiaryPageService {
     private final DiaryPageContentValidator contentValidator;
     private final DiaryPageTagService tagService;
     private final OwnedResources ownedResources;
+    private final PessimisticLocks pessimisticLocks;
 
     public PagedResultDTO<BaseDiaryPageDTO> findAllDiaryPagesByDiary(UUID diaryId, int page) {
         if (page < 1) {
@@ -66,7 +67,7 @@ public class DiaryPageService {
         page.setDiary(diary);
         page.setContent(request.content());
         try (Transaction transaction = database.beginTransaction()) {
-            lockDiary(diary.getId(), "Diary not found");
+            pessimisticLocks.lockDiary(diary.getId());
             int count = database.find(DiaryPage.class).setLabel("createDiaryPage").where().eq("diary.id", diary.getId()).findCount();
             if (count >= MAX_PAGES) {
                 throw new ServiceException("The diary is full (" + MAX_PAGES + " pages)");
@@ -100,9 +101,8 @@ public class DiaryPageService {
     public void deleteDiaryPage(UUID id) {
         UUID diaryId = ownedResources.getDiaryPageByIdAndOwner(id).getDiary().getId();
         try (Transaction transaction = database.beginTransaction()) {
-            lockDiary(diaryId, "Page not found");
+            pessimisticLocks.lockDiary(diaryId, "Page not found");
             DiaryPage page = ownedResources.getDiaryPageByIdAndOwner(id);
-            tagService.deleteDiaryPageTagsByPage(page.getId());
             database.delete(page);
             List<DiaryPage> following = database.find(DiaryPage.class)
                     .setLabel("deleteDiaryPage")
@@ -120,18 +120,6 @@ public class DiaryPageService {
 
     private static boolean isConcurrentInsert(PersistenceException e) {
         return e instanceof DuplicateKeyException || SqlStates.hasSqlState(e, CONCURRENT_INSERT_STATES);
-    }
-
-    private void lockDiary(UUID id, String notFoundMessage) {
-        Diary locked = database.find(Diary.class)
-                .setLabel("lockDiary")
-                .select("id")
-                .forUpdate()
-                .where().idEq(id)
-                .findOne();
-        if (locked == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, notFoundMessage);
-        }
     }
 
     private void validateContent(Map<String, Object> content) {

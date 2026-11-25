@@ -24,6 +24,7 @@ import it.liberheroum.security.JwtInspector;
 import it.liberheroum.services.CharacterBackgroundService;
 import it.liberheroum.services.OwnedResources;
 import it.liberheroum.services.DiaryPageContentValidator;
+import it.liberheroum.services.PessimisticLocks;
 import it.liberheroum.unit.support.QueryStub;
 import jakarta.persistence.PersistenceException;
 import jakarta.persistence.RollbackException;
@@ -66,7 +67,8 @@ class CharacterBackgroundServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CharacterBackgroundService(database, jwtInspector, JsonMapper.builder().build(), config, contentValidator, new OwnedResources(database, jwtInspector));
+        service = new CharacterBackgroundService(database, jwtInspector, JsonMapper.builder().build(), config, contentValidator, new OwnedResources(database, jwtInspector),
+                new PessimisticLocks(database));
     }
 
     private static Map<String, Object> document(String text) {

@@ -30,6 +30,7 @@ import it.liberheroum.services.DiaryPageContentValidator;
 import it.liberheroum.services.OwnedResources;
 import it.liberheroum.services.DiaryPageService;
 import it.liberheroum.services.DiaryPageTagService;
+import it.liberheroum.services.PessimisticLocks;
 import it.liberheroum.unit.support.QueryStub;
 import jakarta.persistence.PersistenceException;
 import jakarta.persistence.RollbackException;
@@ -76,7 +77,8 @@ class DiaryPageServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DiaryPageService(database, JsonMapper.builder().build(), config, contentValidator, tagService, new OwnedResources(database, jwtInspector));
+        service = new DiaryPageService(database, JsonMapper.builder().build(), config, contentValidator, tagService, new OwnedResources(database, jwtInspector),
+                new PessimisticLocks(database));
     }
 
     private Diary diary() {

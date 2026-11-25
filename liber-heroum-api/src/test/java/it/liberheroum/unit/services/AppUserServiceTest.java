@@ -27,15 +27,15 @@ import it.liberheroum.exception.ServiceException;
 import it.liberheroum.model.AppUser;
 import it.liberheroum.model.CharacterSheet;
 import it.liberheroum.model.Diary;
-import it.liberheroum.model.DiaryPage;
 import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.security.RecentAuthentication;
 import it.liberheroum.services.AppUserService;
-import it.liberheroum.services.DiaryPageTagService;
 import it.liberheroum.services.DocumentService;
+import it.liberheroum.services.DocumentSlots;
 import it.liberheroum.services.KeycloakUserService;
+import it.liberheroum.services.PessimisticLocks;
 import it.liberheroum.unit.support.QueryStub;
 import jakarta.persistence.PersistenceException;
 import java.sql.SQLException;
@@ -86,8 +86,6 @@ class AppUserServiceTest {
     @Mock
     private Transaction transaction;
     @Mock
-    private DiaryPageTagService tagService;
-    @Mock
     private KeycloakUserService keycloakUserService;
 
     private final AppUserConfig config = new AppUserConfig();
@@ -99,7 +97,9 @@ class AppUserServiceTest {
     @BeforeEach
     void setUp() {
         service = new AppUserService(database, jwtInspector, JsonMapper.builder().build(), config, documentService,
-                new RecentAuthentication(jwtInspector, Clock.fixed(NOW, ZoneOffset.UTC)), tagService, keycloakUserService);
+                new RecentAuthentication(jwtInspector, Clock.fixed(NOW, ZoneOffset.UTC)), keycloakUserService,
+                new DocumentSlots(database, documentService),
+                new PessimisticLocks(database));
         lenient().when(jwtInspector.getSubject()).thenReturn(SUBJECT);
         users = stubFindLeniently(database, AppUser.class);
     }
@@ -121,6 +121,7 @@ class AppUserServiceTest {
 
     private void givenStoredUser(AppUser user) {
         when(users.where().findOneOrEmpty()).thenReturn(Optional.of(user));
+        lenient().when(users.where().findOne()).thenReturn(user);
     }
 
     private static UpdateSettingsAppUserDTO settingsRequest(String key, Object value) {
@@ -362,7 +363,8 @@ class AppUserServiceTest {
 
     private QueryStub<GameCharacter> givenCharacters(List<GameCharacter> characters) {
         QueryStub<GameCharacter> stub = stubFind(database, GameCharacter.class);
-        when(stub.where().findList()).thenReturn(characters);
+        when(stub.where().<UUID>findIds()).thenReturn(characters.stream().map(GameCharacter::getId).toList());
+        lenient().when(stub.where().findList()).thenReturn(characters);
         return stub;
     }
 
@@ -480,21 +482,20 @@ class AppUserServiceTest {
         givenCharacters(List.of(ownedCharacter(characterAvatar)));
         givenSheets(List.of(sheet(pdf)));
         givenDiaries(List.of(diaryWithCover(cover)));
-        stubFind(database, DiaryPage.class);
         when(database.beginTransaction()).thenReturn(transaction);
 
         service.deleteAppUser();
 
         InOrder order = inOrder(documentService, transaction);
         order.verify(documentService).deleteDocumentRecord(userAvatar);
+        order.verify(documentService).deleteDocumentRecord(characterAvatar);
         order.verify(documentService).deleteDocumentRecord(pdf);
         order.verify(documentService).deleteDocumentRecord(cover);
-        order.verify(documentService).deleteDocumentRecord(characterAvatar);
         order.verify(transaction).commit();
         order.verify(documentService).deleteDocumentFile(userAvatar);
+        order.verify(documentService).deleteDocumentFile(characterAvatar);
         order.verify(documentService).deleteDocumentFile(pdf);
         order.verify(documentService).deleteDocumentFile(cover);
-        order.verify(documentService).deleteDocumentFile(characterAvatar);
     }
 
     @Test

@@ -538,7 +538,7 @@ class CharacterSheetIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void deleteGameCharacter_sheetAddedBeforeCommit_returnsConflictAndKeepsCharacter() {
+    void deleteGameCharacter_sheetAddedWhileWaitingForLock_returnsOkAndDeletesAlsoTheNewSheetAndDocument() {
         UUID characterId = characterWithOwner("Alira");
         UUID documentId = UUID.randomUUID();
 
@@ -549,9 +549,9 @@ class CharacterSheetIT extends AbstractIntegrationTest {
                     () -> mvc.delete().uri("/characters/{id}", characterId).with(currentUser()).exchange());
             concurrent.commit();
 
-            assertThat(delete.join()).hasStatus(HttpStatus.CONFLICT);
+            assertThat(delete.join()).hasStatusOk();
         }
-        assertThat(countRows("game_character")).isEqualTo(1);
+        assertThat(List.of(countRows("game_character"), countRows("character_sheet"), countRows("document"))).containsOnly(0);
     }
 
     @Test

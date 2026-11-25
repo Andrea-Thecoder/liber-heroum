@@ -80,6 +80,7 @@ Per questo applicativo, in ambiente Dev, verranno utilizzate le seguenti porte:
 | Servizio | Porta host | Porta container | Note |
 |---|---|---|---|
 | **liber-heroum-api** *(backend)* | `8080` | – | Context path `/api/v1/liber-heroum-api` |
+| **liber-heroum-api** *(Actuator)* | `8081` | – | Health e metriche, senza context path; mai esposta su internet |
 | **liber-heroum-ui** *(frontend)* | `5173` | – | Origine ammessa da CORS e da Keycloak |
 | PostgreSQL (applicazione) | `5432` | `5432` | Database e utente `liber-heroum-api` |
 | PostgreSQL (Keycloak) | `5433` | `5432` | Database e utente `keycloak` |
@@ -87,6 +88,8 @@ Per questo applicativo, in ambiente Dev, verranno utilizzate le seguenti porte:
 | SeaweedFS | `8333` | `8333` | Storage S3 |
 | Mailpit, protocollo SMTP | `1025` | `1025` | Intercetta le email di Keycloak |
 | Mailpit, interfaccia web | `8025` | `8025` | `http://localhost:8025` |
+| Prometheus | `9090` | `9090` | Solo da `127.0.0.1`, `http://localhost:9090` |
+| Grafana | `3000` | `3000` | Solo da `127.0.0.1`, `http://localhost:3000` (`admin` / `secret`) |
 
 ### Configurazione Storage
 
@@ -149,7 +152,7 @@ Panoramica delle directory principali dell'applicativo:
 |---|---|
 | `/docker-compose` | Tutti i file necessari per l'avvio dei container Docker e la loro inizializzazione per far partire il progetto in locale, compreso il realm di Keycloak. |
 | `/keycloak-extensions` | I sorgenti dell'estensione di Keycloak per il cambio email. |
-| `/resources/dbinit/postgres` | I file `.sql` necessari a ***Flyway*** per effettuare la migrazione del database all'avvio dell'applicativo. |
+| `/resources/dbinit/postgres` | Le migrazioni che ***Flyway*** esegue all'avvio dell'applicativo: `V1.0__schema.sql` (tabelle, chiavi esterne e indici, generata da `GenerateDbMigration` a partire dalle entity) e `V1.1__constraints.sql` (vincoli e indici scritti a mano che il generatore non produce). |
 | `/java/.../controller` | Le classi che espongono gli endpoint dell'applicativo. |
 | `/java/.../config` | Le classi di configurazione dell'applicativo. |
 | `/java/.../dto` | I `Data Transfer Object` utilizzati per lo scambio dati tra i componenti. |
@@ -206,8 +209,12 @@ Gli endpoint richiedono un token (pulsante **Authorize** di Swagger UI). Il logi
 Il progetto include degli health check per verificare lo stato dei servizi:
 
 - Per i container Docker sono configurati all'interno del **`docker-compose.yml`**.
-- Per il backend è esposto `/actuator/health`: [Health check](http://localhost:8080/api/v1/liber-heroum-api/actuator/health). Il dettaglio (database, disco) e le altre risorse di Actuator sono riservati al ruolo `admin`.
+- Per il backend è esposto `/actuator/health` sulla porta di gestione `8081`: [Health check](http://localhost:8081/actuator/health). Il dettaglio (database, disco) e le altre risorse di Actuator (oggi `info`) sono riservati al ruolo `admin`.
 - Come controllarlo all'avvio: [Runbook › Avviare il progetto](RUNBOOK.md#avviare-il-progetto).
+
+### Metriche
+
+Il backend conta da solo (Micrometer) richieste, tempi di risposta, errori, memoria, CPU e connessioni al database, e li espone in formato Prometheus su `http://localhost:8081/actuator/prometheus` (senza token: la porta `8081` è solo interna). Il container `prometheus` li legge ogni 15 secondi e li conserva, `grafana` li mostra nella dashboard **Liber Heroum API**, caricata dal repository (`docker-compose/grafana`). Procedura: [Runbook › Guardare le metriche](RUNBOOK.md#guardare-le-metriche).
 
 ---
 

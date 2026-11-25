@@ -30,10 +30,11 @@ import it.liberheroum.model.DiaryPage;
 import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
 import it.liberheroum.security.JwtInspector;
-import it.liberheroum.services.DiaryPageTagService;
 import it.liberheroum.services.OwnedResources;
 import it.liberheroum.services.DiaryService;
 import it.liberheroum.services.DocumentService;
+import it.liberheroum.services.DocumentSlots;
+import it.liberheroum.services.PessimisticLocks;
 import it.liberheroum.unit.support.QueryStub;
 import jakarta.persistence.PersistenceException;
 import java.sql.SQLException;
@@ -67,8 +68,6 @@ class DiaryServiceTest {
     private DocumentService documentService;
     @Mock
     private Transaction transaction;
-    @Mock
-    private DiaryPageTagService tagService;
 
     private final MultipartFile file = new MockMultipartFile("file", "cover.png", "image/png", new byte[]{1});
 
@@ -76,7 +75,9 @@ class DiaryServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DiaryService(database, jwtInspector, documentService, tagService, new OwnedResources(database, jwtInspector));
+        service = new DiaryService(database, jwtInspector, documentService, new OwnedResources(database, jwtInspector),
+                new DocumentSlots(database, documentService),
+                new PessimisticLocks(database));
         when(jwtInspector.getSubject()).thenReturn(SUBJECT);
     }
 
@@ -280,7 +281,6 @@ class DiaryServiceTest {
         Document cover = document("cover.png");
         diary.setCoverDocument(cover);
         givenOwnedDiary(diary);
-        stubFind(database, DiaryPage.class);
         when(database.beginTransaction()).thenReturn(transaction);
         doThrow(foreignKeyViolation()).when(database).delete(diary);
 
@@ -296,7 +296,6 @@ class DiaryServiceTest {
         Diary diary = diary("Chapter one");
         diary.setCoverDocument(document("cover.png"));
         givenOwnedDiary(diary);
-        stubFind(database, DiaryPage.class);
         when(database.beginTransaction()).thenReturn(transaction);
         PersistenceException failure = new PersistenceException("connection lost", new SQLException("gone", "08006"));
         doThrow(failure).when(database).delete(diary);
@@ -312,8 +311,8 @@ class DiaryServiceTest {
         Diary diary = diary("Chapter one");
         Document cover = document("cover.png");
         diary.setCoverDocument(cover);
-        givenOwnedDiary(diary);
-        stubFind(database, DiaryPage.class);
+        QueryStub<Diary> diaries = givenOwnedDiary(diary);
+        when(diaries.where().findList()).thenReturn(List.of(diary));
         when(database.beginTransaction()).thenReturn(transaction);
 
         service.deleteDiary(DIARY_ID);

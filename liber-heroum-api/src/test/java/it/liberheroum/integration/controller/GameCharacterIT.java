@@ -350,17 +350,20 @@ class GameCharacterIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void deleteGameCharacter_withDiariesPagesAvatarAndCover_deletesEverythingAndFiles() throws Exception {
+    void deleteGameCharacter_withDiariesPagesTagsSheetAvatarAndCover_deletesEverythingAndFiles() throws Exception {
         createAppUser();
         UUID characterId = createGameCharacter("Aragorn");
         UUID diaryId = createDiary(characterId, "Chapter one");
-        createDiaryPage(diaryId, "Day one");
+        UUID pageId = createDiaryPage(diaryId, "Day one");
+        mvc.put().uri("/pages/{id}/tag", pageId).contentType(MediaType.APPLICATION_JSON).content("{\"tag\":\"combat\"}").exchange();
+        mvc.post().uri("/characters/{id}/sheets", characterId).multipart().file(pdfFile("sheet.pdf")).param("title", "Sheet").exchange();
         mvc.put().uri("/characters/{id}/avatar", characterId).multipart().file(pngFile("avatar.png")).exchange();
         mvc.put().uri("/diaries/{id}/cover", diaryId).multipart().file(pngFile("cover.png")).exchange();
 
         mvc.delete().uri("/characters/{id}", characterId).exchange();
 
-        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"), countRows("document"))).containsOnly(0);
+        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"), countRows("diary_page_tag"),
+                countRows("character_sheet"), countRows("document"))).containsOnly(0);
         assertThat(storedObjectKeys()).isEmpty();
     }
 
@@ -398,28 +401,26 @@ class GameCharacterIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void deleteGameCharacter_diaryAddedBeforeCommit_returnsConflictWithRetryMessageAndKeepsCharacter() {
+    void deleteGameCharacter_diaryAddedWhileWaitingForLock_returnsOkAndDeletesAlsoTheNewDiary() {
         createAppUser();
         UUID characterId = createGameCharacter("Aragorn");
 
         MvcTestResult result = deleteCharacterWhileDiaryIsAdded(characterId);
 
-        assertThat(result).hasStatus(HttpStatus.CONFLICT);
-        assertThat(result).bodyJson().extractingPath("$.violations[0].message")
-                .isEqualTo("The character changed while it was being deleted, try again");
-        assertThat(countRows("game_character")).isEqualTo(1);
+        assertThat(result).hasStatusOk();
+        assertThat(List.of(countRows("game_character"), countRows("diary"))).containsOnly(0);
     }
 
     @Test
-    void deleteGameCharacter_pageAddedBeforeCommit_returnsConflictAndKeepsDiaryAndPage() {
+    void deleteGameCharacter_pageAddedWhileWaitingForLock_returnsOkAndDeletesAlsoTheNewPage() {
         createAppUser();
         UUID characterId = createGameCharacter("Aragorn");
         UUID diaryId = createDiary(characterId, "Chapter one");
 
         MvcTestResult result = deleteCharacterWhilePageIsAdded(characterId, diaryId);
 
-        assertThat(result).hasStatus(HttpStatus.CONFLICT);
-        assertThat(List.of(countRows("diary"), countRows("diary_page"))).containsExactly(1, 1);
+        assertThat(result).hasStatusOk();
+        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"))).containsOnly(0);
     }
 
     @Test

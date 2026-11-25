@@ -33,6 +33,8 @@ import it.liberheroum.security.JwtInspector;
 import it.liberheroum.services.CharacterSheetService;
 import it.liberheroum.services.OwnedResources;
 import it.liberheroum.services.DocumentService;
+import it.liberheroum.services.DocumentSlots;
+import it.liberheroum.services.PessimisticLocks;
 import it.liberheroum.unit.support.QueryStub;
 import jakarta.persistence.PersistenceException;
 import java.sql.SQLException;
@@ -75,7 +77,9 @@ class CharacterSheetServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CharacterSheetService(database, jwtInspector, documentService, config, new OwnedResources(database, jwtInspector));
+        service = new CharacterSheetService(database, jwtInspector, documentService, config, new OwnedResources(database, jwtInspector),
+                new DocumentSlots(database, documentService),
+                new PessimisticLocks(database));
         when(jwtInspector.getSubject()).thenReturn(SUBJECT);
     }
 

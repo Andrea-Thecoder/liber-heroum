@@ -1,5 +1,7 @@
 package it.liberheroum.model;
 
+import io.ebean.annotation.ConstraintMode;
+import io.ebean.annotation.DbForeignKey;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -22,9 +24,11 @@ public class DiaryPageTag extends AbstractAuditable {
     /** Diario della pagina, copiato per contare i tag del diario; il database garantisce che coincida con quello della pagina. */
     @ManyToOne(optional = false)
     @JoinColumn(name = "diary_id", nullable = false)
+    @DbForeignKey(onDelete = ConstraintMode.CASCADE)
     private Diary diary;
 
     @OneToOne(optional = false)
     @JoinColumn(name = "page_id", nullable = false)
+    @DbForeignKey(onDelete = ConstraintMode.CASCADE)
     private DiaryPage page;
 }

@@ -36,6 +36,7 @@ public class GameCharacter extends AbstractAuditable {
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "owner_id", nullable = false)
+    @DbForeignKey(onDelete = ConstraintMode.CASCADE)
     private AppUser owner;
 
     @ManyToOne

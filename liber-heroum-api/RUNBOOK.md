@@ -12,12 +12,14 @@ Il backend gira fuori da Docker (`./mvnw spring-boot:run`), gli altri servizi ne
 
 | Servizio | Cosa fa | Porta | Dipende da | Controllo di stato |
 |---|---|---|---|---|
-| **liber-heroum-api** | Backend REST | `8080` | PostgreSQL, SeaweedFS, Keycloak (per le chiavi dei token) | `/actuator/health` |
+| **liber-heroum-api** | Backend REST | `8080` (API), `8081` (Actuator) | PostgreSQL, SeaweedFS, Keycloak (per le chiavi dei token) | `http://localhost:8081/actuator/health` |
 | `postgres` | Database applicativo | `5432` | – | `docker compose ps` (healthy) |
 | `postgres-keycloak` | Database di Keycloak | `5433` | – | `docker compose ps` (healthy) |
 | `keycloak` | Login, token, ruoli | `8180` | `postgres-keycloak`, `mailpit` | `docker compose ps` (healthy) |
 | `seaweedfs` | Storage S3 delle immagini | `8333` | – | nessuno |
 | `mailpit` | Email di Keycloak | `8025` (web), `1025` (SMTP) | – | nessuno |
+| `prometheus` | Raccoglie le metriche del backend ogni 15 secondi | `9090` (solo dal PC) | backend acceso sulla `8081` | `docker compose ps` (healthy) |
+| `grafana` | Grafici delle metriche | `3000` (solo dal PC) | `prometheus` | nessuno |
 
 Ordine di avvio: prima i container (aspettare che i servizi con controllo di stato siano `healthy`), poi il backend. Il backend all'avvio non contatta Keycloak: scarica le chiavi di firma alla prima richiesta con un token, e il client admin prende il suo token alla prima cancellazione di un account. Contatta invece lo storage per creare i bucket se mancano (se lo storage è spento scrive un avviso e parte lo stesso).
 
@@ -26,7 +28,7 @@ Ordine di avvio: prima i container (aspettare che i servizi con controllo di sta
 | Cosa | Come |
 |---|---|
 | Backend | Console in cui gira `./mvnw spring-boot:run`. Il package `it.liberheroum` logga a livello `DEBUG`. |
-| Container | Dalla cartella `docker-compose`: `docker compose logs -f <servizio>` (`postgres`, `postgres-keycloak`, `keycloak`, `mailpit`, `seaweedfs`). |
+| Container | Dalla cartella `docker-compose`: `docker compose logs -f <servizio>` (`postgres`, `postgres-keycloak`, `keycloak`, `mailpit`, `seaweedfs`, `prometheus`, `grafana`). |
 
 ---
 
@@ -46,7 +48,15 @@ Backend, dalla radice del progetto: `./mvnw spring-boot:run`.
 
 ### Controllare lo stato del backend
 
-`http://localhost:8080/api/v1/liber-heroum-api/actuator/health` risponde senza dettagli a tutti. Il dettaglio (database, disco) lo vede solo un utente con ruolo `admin`, con il suo token.
+Actuator risponde solo sulla porta di gestione `8081`, senza il context path dell'API: `http://localhost:8081/actuator/health` risponde senza dettagli a tutti (con i gruppi `liveness` e `readiness`). Il dettaglio (database, disco) lo vede solo un utente con ruolo `admin`, con il suo token. Sulla porta `8080` Actuator non c'è più.
+
+### Guardare le metriche
+
+1. Avviare i container (`docker compose up -d`, compresi `prometheus` e `grafana`) e il backend.
+2. Controllare che Prometheus legga il backend: `http://localhost:9090/targets`, il target `liber-heroum-api` deve essere `UP`.
+3. Aprire Grafana su `http://localhost:3000` (utente `admin`, password `secret`, solo sviluppo), cartella **Liber Heroum**, dashboard **Liber Heroum API**: stato, richieste al secondo, tempi di risposta p95, errori, memoria, CPU, connessioni al database e thread.
+
+Le metriche grezze si leggono anche a mano su `http://localhost:8081/actuator/prometheus`. La dashboard e la fonte dati stanno nel repository (`docker-compose/grafana`), Grafana le carica da solo all'avvio e non si modificano dall'interfaccia: si cambia il file JSON e Grafana lo rilegge entro pochi secondi. La storia delle metriche resta nel volume `prometheus-data` (15 giorni, il default di Prometheus).
 
 ### Reimportare il realm di Keycloak
 
@@ -157,14 +167,17 @@ docker compose restart keycloak
 | Il backend non parte con un errore di configurazione | Le proprietà sono validate e un valore sbagliato blocca l'avvio. Endpoint, chiavi e bucket dello storage sono obbligatori, `url-expiry` va da 1 secondo a 7 giorni, le dimensioni devono essere maggiori di zero, `delete-max-auth-age` almeno 1 secondo, `app.keycloak-admin.*` (`server-url`, `realm`, `client-id`, `client-secret`) obbligatorio. | Leggere il log: indica la proprietà. |
 | Il build fallisce con un errore sulla versione di Java | È in uso un JDK diverso dal 25. | Controllare `java -version` e usare il JDK 25. |
 | Connection refused sulla porta `5432` | `postgres` non è partito o non è `healthy`. | `docker compose ps`, poi `docker compose logs postgres`. |
+| Il backend non parte con «Port 8081 was already in use» | Un altro processo usa la porta di Actuator (spesso un'altra istanza del backend). | Fermare l'altra istanza, oppure cambiare `management.server.port` (e il target in `docker-compose/prometheus/prometheus.yml`). |
+| Su `http://localhost:9090/targets` il target `liber-heroum-api` è `DOWN` | Il backend è spento, oppure il firewall del PC blocca le connessioni dalla rete Docker verso la porta `8081` dell'host (Prometheus la raggiunge come `host.docker.internal`). | Avviare il backend; se è acceso, permettere al firewall le connessioni dalle reti Docker sulla `8081`. |
 | Il backend non parte con errori di Flyway o di schema | Il volume del database esisteva già prima dello script `init-db-postgres.sql`, che gira solo alla creazione del volume: lo schema `dev` manca. | Azzerare il database (vedi sezione 2). |
+| Il backend non parte con «Migration checksum mismatch» o «Detected applied migration not resolved locally» | Le migrazioni sono state riscritte o raggruppate (oggi sono solo `V1.0` e `V1.1`) e il database locale è stato creato con quelle vecchie. | Azzerare il database (vedi sezione 2). |
 
 ### Dati e API
 
 | Sintomo | Causa probabile | Rimedio |
 |---|---|---|
 | 409 «The resource was modified elsewhere, reload it» | Modifica concorrente. Per le pagine la `version` inviata non è più quella del server. | Ricaricare i dati e ripetere la modifica. |
-| 409 «... changed while it was being deleted, try again» | Cancellazione di un personaggio, diario o account in corsa con una creazione. | Ripetere la chiamata. |
+| 409 «... changed while it was being deleted, try again» | Difesa che non dovrebbe scattare: le cancellazioni di account, personaggi e diari bloccano la riga e cancellano in cascata anche quello che viene creato nel frattempo. | Ripetere la chiamata; se si ripete, controllare le chiavi esterne (devono essere `ON DELETE CASCADE`, vedi `SchemaIT`). |
 | 400 «Invalid page content at ...» | Il contenuto della pagina non rientra in quello che accetta il validatore (peso massimo 50 KB, profondità 50). | Il messaggio indica il punto. Se l'editor ha una funzione nuova, va aggiunta anche in `DiaryPageContentValidator`. Caso noto: incollando HTML con `<ol type="x">` l'editor produce un valore che il backend rifiuta. |
 | 400 «... contains characters that cannot be stored» | Il testo contiene il carattere NUL o metà di un'emoji. | Togliere i caratteri dal testo. |
 | `POST /feedback` risponde 429 con `Retry-After` | Più di 5 invii in un'ora dallo stesso indirizzo (`app.feedback.rate-limit-max-requests` e `rate-limit-window`). I contatori stanno in memoria. | Aspettare, oppure in sviluppo riavviare il backend. Dietro un reverse proxy, se il 429 arriva a tutti, l'indirizzo visto è quello del proxy: serve `server.forward-headers-strategy`. |
@@ -240,5 +253,7 @@ Ancora da definire. Prima di andare online:
 - [ ] Intestazioni `X-Content-Type-Options: nosniff` e `Cache-Control: no-store` sulle risposte con dati personali
 - [ ] Chiavi e password fuori dal repository
 - [ ] Pulizia dei file orfani nello storage e antivirus sui file caricati
+- [ ] Porta di Actuator (`8081`) mai pubblicata su internet né inoltrata dal reverse proxy: Prometheus la legge dalla rete interna. Con Docker non va messa in `ports:` (Docker scavalca il firewall `ufw`); valutare `management.server.address` sull'interfaccia interna. Password vera di Grafana e Grafana dietro login.
+- [ ] Avvisi sulle metriche (errori 5xx, tempi di risposta) da definire
 - [ ] Limite alla dimensione della richiesta a livello di server, oggi il peso si controlla dopo la lettura del corpo
 - [ ] Feedback: `server.forward-headers-strategy` dietro il reverse proxy (altrimenti il limite per indirizzo vale per tutti), bucket `feedback-documents` nei backup, durata di conservazione dei feedback, notifica al titolare (oggi il backend non manda email)

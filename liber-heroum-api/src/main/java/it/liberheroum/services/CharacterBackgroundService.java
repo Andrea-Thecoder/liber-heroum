@@ -38,6 +38,7 @@ public class CharacterBackgroundService {
     private final CharacterBackgroundConfig config;
     private final DiaryPageContentValidator contentValidator;
     private final OwnedResources ownedResources;
+    private final PessimisticLocks pessimisticLocks;
 
     public DetailCharacterBackgroundDTO getCharacterBackground(UUID characterId) {
         GameCharacter character = getPlayerCharacterByIdAndOwner(characterId);
@@ -66,7 +67,7 @@ public class CharacterBackgroundService {
         }
         CharacterBackground background;
         try (Transaction transaction = database.beginTransaction()) {
-            GameCharacter character = lockGameCharacter(characterId);
+            GameCharacter character = pessimisticLocks.lockGameCharacter(characterId);
             background = findBackgroundByCharacter(characterId);
             long currentVersion = background == null ? VERSION_WITHOUT_BACKGROUND : background.getVersion();
             if (!Objects.equals(currentVersion, request.version())) {
@@ -98,19 +99,6 @@ public class CharacterBackgroundService {
             throw new ServiceException("Background content too large");
         }
         contentValidator.validate(content);
-    }
-
-    private GameCharacter lockGameCharacter(UUID id) {
-        GameCharacter locked = database.find(GameCharacter.class)
-                .setLabel("lockGameCharacter")
-                .select("id")
-                .forUpdate()
-                .where().idEq(id)
-                .findOne();
-        if (locked == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Character not found");
-        }
-        return locked;
     }
 
     private CharacterBackground findBackgroundByCharacter(UUID characterId) {

@@ -24,16 +24,16 @@ import it.liberheroum.dto.search.GameCharacterSearchRequest;
 import it.liberheroum.model.AppUser;
 import it.liberheroum.model.CharacterSheet;
 import it.liberheroum.model.Diary;
-import it.liberheroum.model.DiaryPage;
 import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
 import it.liberheroum.model.GameCharacterKind;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.services.CharacterBackgroundService;
 import it.liberheroum.services.OwnedResources;
-import it.liberheroum.services.DiaryPageTagService;
 import it.liberheroum.services.DocumentService;
+import it.liberheroum.services.DocumentSlots;
 import it.liberheroum.services.GameCharacterService;
+import it.liberheroum.services.PessimisticLocks;
 import it.liberheroum.unit.support.QueryStub;
 import jakarta.persistence.PersistenceException;
 import java.sql.SQLException;
@@ -66,8 +66,6 @@ class GameCharacterServiceTest {
     @Mock
     private Transaction transaction;
     @Mock
-    private DiaryPageTagService tagService;
-    @Mock
     private CharacterBackgroundService backgroundService;
 
     private final MultipartFile file = new MockMultipartFile("file", "avatar.png", "image/png", new byte[]{1});
@@ -76,7 +74,9 @@ class GameCharacterServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GameCharacterService(database, jwtInspector, documentService, tagService, backgroundService, new OwnedResources(database, jwtInspector));
+        service = new GameCharacterService(database, jwtInspector, documentService, backgroundService,
+                new OwnedResources(database, jwtInspector), new DocumentSlots(database, documentService),
+                new PessimisticLocks(database));
         when(jwtInspector.getSubject()).thenReturn(SUBJECT);
     }
 
@@ -274,10 +274,10 @@ class GameCharacterServiceTest {
         Document avatar = document("avatar.png");
         Document cover = document("cover.png");
         character.setAvatarDocument(avatar);
-        givenOwnedCharacter(character);
+        QueryStub<GameCharacter> characters = givenOwnedCharacter(character);
+        when(characters.where().findList()).thenReturn(List.of(character));
         givenSheets();
         givenDiaries(List.of(diary(cover), diary(null)));
-        stubFind(database, DiaryPage.class);
         when(database.beginTransaction()).thenReturn(transaction);
 
         service.deleteGameCharacter(CHARACTER_ID);
