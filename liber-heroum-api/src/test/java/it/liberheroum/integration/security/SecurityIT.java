@@ -222,8 +222,8 @@ class SecurityIT extends AbstractIntegrationTest {
 
         mvc.post().uri("/me").header(HttpHeaders.AUTHORIZATION, bearer(token)).exchange();
 
-        assertThat(jdbc.queryForMap("select keycloak_id, email from app_user"))
-                .containsEntry("keycloak_id", keycloakUserId("user1"))
+        assertThat(jdbc.queryForMap("select subject, email from app_user"))
+                .containsEntry("subject", keycloakUserId("user1"))
                 .containsEntry("email", "user1@example.com");
     }
 

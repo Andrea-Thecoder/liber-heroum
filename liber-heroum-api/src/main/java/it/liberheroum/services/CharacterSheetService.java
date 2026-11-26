@@ -15,7 +15,6 @@ import it.liberheroum.exception.SqlStates;
 import it.liberheroum.model.CharacterSheet;
 import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
-import it.liberheroum.security.JwtInspector;
 import jakarta.persistence.PersistenceException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -32,16 +31,15 @@ import java.util.UUID;
 public class CharacterSheetService {
 
     private final Database database;
-    private final JwtInspector jwtInspector;
     private final DocumentService documentService;
     private final CharacterSheetConfig config;
-    private final OwnedResources ownedResources;
+    private final ResourceAccessGuard accessGuard;
     private final DocumentSlots documentSlots;
     private final PessimisticLocks pessimisticLocks;
 
     public PagedResultDTO<BaseCharacterSheetDTO> findAllCharacterSheetsByCharacter(UUID characterId,
                                                                                     CharacterSheetSearchRequest request) {
-        GameCharacter character = ownedResources.getGameCharacterByIdAndOwner(characterId);
+        GameCharacter character = accessGuard.getGameCharacterByIdAndOwner(characterId);
         ExpressionList<CharacterSheet> query = database.find(CharacterSheet.class)
                 .setLabel("findAllCharacterSheetsByCharacter")
                 .fetch("document")
@@ -52,12 +50,12 @@ public class CharacterSheetService {
     }
 
     public DetailCharacterSheetDTO getCharacterSheetById(UUID id) {
-        return toDetailCharacterSheetDTO(getCharacterSheetByIdAndOwner(id));
+        return toDetailCharacterSheetDTO(accessGuard.getCharacterSheetWithDocumentByIdAndOwner(id));
     }
 
     public DetailCharacterSheetDTO createCharacterSheet(UUID characterId, InsertCharacterSheetDTO request,
                                                         MultipartFile file) {
-        GameCharacter character = ownedResources.getGameCharacterByIdAndOwner(characterId);
+        GameCharacter character = accessGuard.getGameCharacterByIdAndOwner(characterId);
         CharacterSheet sheet = new CharacterSheet();
         sheet.setCharacter(character);
         apply(sheet, request.title(), request.system());
@@ -89,35 +87,24 @@ public class CharacterSheetService {
     }
 
     public DetailCharacterSheetDTO updateCharacterSheet(UUID id, UpdateCharacterSheetDTO request) {
-        CharacterSheet sheet = getCharacterSheetByIdAndOwner(id);
+        CharacterSheet sheet = accessGuard.getCharacterSheetWithDocumentByIdAndOwner(id);
         apply(sheet, request.title(), request.system());
         database.save(sheet);
         return toDetailCharacterSheetDTO(sheet);
     }
 
     public DetailCharacterSheetDTO updateCharacterSheetFile(UUID id, MultipartFile file) {
-        CharacterSheet sheet = getCharacterSheetByIdAndOwner(id);
+        CharacterSheet sheet = accessGuard.getCharacterSheetWithDocumentByIdAndOwner(id);
         documentSlots.replace(sheet, sheet.getDocument(), sheet::setDocument,
                 () -> documentService.createPdfDocument(file));
         return toDetailCharacterSheetDTO(sheet);
     }
 
     public void deleteCharacterSheet(UUID id) {
-        CharacterSheet sheet = getCharacterSheetByIdAndOwner(id);
+        CharacterSheet sheet = accessGuard.getCharacterSheetWithDocumentByIdAndOwner(id);
         documentSlots.deleteWithDocuments(List.of(sheet.getDocument()), () -> database.delete(sheet));
     }
 
-    private CharacterSheet getCharacterSheetByIdAndOwner(UUID id) {
-        CharacterSheet sheet = database.find(CharacterSheet.class)
-                .setLabel("getCharacterSheetByIdAndOwner")
-                .fetch("document")
-                .where().idEq(id).eq("character.owner.keycloakId", jwtInspector.getSubject())
-                .findOne();
-        if (sheet == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Sheet not found");
-        }
-        return sheet;
-    }
 
     private BaseCharacterSheetDTO toBaseCharacterSheetDTO(CharacterSheet sheet) {
         return BaseCharacterSheetDTO.from(sheet,

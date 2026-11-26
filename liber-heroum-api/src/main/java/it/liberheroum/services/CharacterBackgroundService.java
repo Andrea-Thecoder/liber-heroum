@@ -37,7 +37,7 @@ public class CharacterBackgroundService {
     private final ObjectMapper objectMapper;
     private final CharacterBackgroundConfig config;
     private final DiaryPageContentValidator contentValidator;
-    private final OwnedResources ownedResources;
+    private final ResourceAccessGuard accessGuard;
     private final PessimisticLocks pessimisticLocks;
 
     public DetailCharacterBackgroundDTO getCharacterBackground(UUID characterId) {
@@ -50,7 +50,7 @@ public class CharacterBackgroundService {
         CharacterBackground background = database.find(CharacterBackground.class)
                 .setLabel("findCharacterBackgroundPreview")
                 .select("preview")
-                .where().eq("character.id", characterId).eq("character.owner.keycloakId", jwtInspector.getSubject())
+                .where().eq("character.id", characterId).eq("character.owner.subject", jwtInspector.getSubject())
                 .findOne();
         if (background == null || StringUtils.isBlank(background.getPreview())) {
             return null;
@@ -104,12 +104,12 @@ public class CharacterBackgroundService {
     private CharacterBackground findBackgroundByCharacter(UUID characterId) {
         return database.find(CharacterBackground.class)
                 .setLabel("findCharacterBackgroundByCharacter")
-                .where().eq("character.id", characterId).eq("character.owner.keycloakId", jwtInspector.getSubject())
+                .where().eq("character.id", characterId).eq("character.owner.subject", jwtInspector.getSubject())
                 .findOne();
     }
 
     private GameCharacter getPlayerCharacterByIdAndOwner(UUID id) {
-        GameCharacter character = ownedResources.getGameCharacterByIdAndOwner(id);
+        GameCharacter character = accessGuard.getGameCharacterByIdAndOwner(id);
         if (character.getKind() == GameCharacterKind.GAME_MASTER) {
             throw new ServiceException("A game master has no background");
         }

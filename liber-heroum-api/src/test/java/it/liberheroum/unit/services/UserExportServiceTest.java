@@ -17,6 +17,7 @@ import it.liberheroum.services.DocumentService;
 import it.liberheroum.services.RichTextPdfRenderer;
 import it.liberheroum.services.UserExport;
 import it.liberheroum.services.UserExportService;
+import it.liberheroum.services.ResourceAccessGuard;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -57,7 +58,8 @@ class UserExportServiceTest {
     void setUp() {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
         service = new UserExportService(database, jwtInspector, new RecentAuthentication(jwtInspector, clock),
-                new AppUserConfig(), documentService, JsonMapper.builder().build(), clock, new RichTextPdfRenderer());
+                new AppUserConfig(), documentService, JsonMapper.builder().build(), clock, new RichTextPdfRenderer(),
+                new ResourceAccessGuard(database, jwtInspector));
     }
 
     private static Map<String, byte[]> unzip(byte[] archive) throws IOException {

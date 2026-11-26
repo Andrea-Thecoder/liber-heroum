@@ -104,6 +104,27 @@ class ConfigValidationTest {
     }
 
     @Test
+    void startup_orphanCleanupEveryNight_succeeds() {
+        storageRunner("app.storage.orphan-cleanup-cron=0 0 3 * * *", "app.storage.orphan-cleanup-zone=Europe/Rome",
+                "app.storage.orphan-min-age=1h").run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    void startup_orphanCleanupTurnedOff_succeeds() {
+        storageRunner("app.storage.orphan-cleanup-enabled=false").run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    void startup_invalidOrphanCleanupCron_fails() {
+        storageRunner("app.storage.orphan-cleanup-cron=every night").run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    void startup_orphanMinAgeUnderOneHour_fails() {
+        storageRunner("app.storage.orphan-min-age=59m").run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
     void startup_validDiaryConfig_succeeds() {
         diaryRunner("app.diary.max-page-content-depth=50").run(context -> assertThat(context).hasNotFailed());
     }
@@ -254,8 +275,7 @@ class ConfigValidationTest {
     @Test
     void startup_validFeedbackConfig_succeeds() {
         feedbackRunner("app.feedback.bucket=feedback-documents", "app.feedback.max-files=3", "app.feedback.max-total-file-size=5MB",
-                "app.feedback.max-technical-info-size=2KB", "app.feedback.timezone=Europe/Rome",
-                "app.feedback.rate-limit-max-requests=5", "app.feedback.rate-limit-window=1h")
+                "app.feedback.max-technical-info-size=2KB", "app.feedback.timezone=Europe/Rome")
                 .run(context -> assertThat(context).hasNotFailed());
     }
 
@@ -271,9 +291,7 @@ class ConfigValidationTest {
             "app.feedback.max-total-file-size=0B",
             "app.feedback.max-total-file-size=-1MB",
             "app.feedback.max-technical-info-size=0B",
-            "app.feedback.timezone=Mars/Olympus",
-            "app.feedback.rate-limit-max-requests=0",
-            "app.feedback.rate-limit-window=0s"})
+            "app.feedback.timezone=Mars/Olympus"})
     void startup_invalidFeedbackValue_fails(String value) {
         feedbackRunner(value).run(context -> assertThat(context).hasFailed());
     }

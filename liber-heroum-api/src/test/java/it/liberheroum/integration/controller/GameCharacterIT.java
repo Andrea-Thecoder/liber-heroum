@@ -81,7 +81,7 @@ class GameCharacterIT extends AbstractIntegrationTest {
 
     private MvcTestResult createCharacterWhileUserIsDeleted() {
         try (BlockingTransaction deletion = BlockingTransaction.begin(jdbc)
-                .execute("delete from app_user where keycloak_id = ?", TestJwt.USER_SUBJECT)) {
+                .execute("delete from app_user where subject = ?", TestJwt.USER_SUBJECT)) {
             CompletableFuture<MvcTestResult> create = deletion.startBlockedCall(
                     () -> mvc.post().uri("/characters").with(currentUser()).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"name\":\"Aragorn\",\"kind\":\"PLAYER\"}").exchange());
@@ -97,8 +97,8 @@ class GameCharacterIT extends AbstractIntegrationTest {
         UUID id = createGameCharacter("Aragorn");
 
         Map<String, Object> stored = jdbc.queryForMap(
-                "select u.keycloak_id, c.created_by from game_character c join app_user u on u.id = c.owner_id where c.id = ?", id);
-        assertThat(stored).containsEntry("keycloak_id", TestJwt.USER_SUBJECT).containsEntry("created_by", TestJwt.USER_SUBJECT);
+                "select u.subject, c.created_by from game_character c join app_user u on u.id = c.owner_id where c.id = ?", id);
+        assertThat(stored).containsEntry("subject", TestJwt.USER_SUBJECT).containsEntry("created_by", TestJwt.USER_SUBJECT);
     }
 
     @Test

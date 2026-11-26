@@ -29,13 +29,14 @@ import it.liberheroum.model.CharacterSheet;
 import it.liberheroum.model.Diary;
 import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
+import it.liberheroum.security.IdentityProviderAdmin;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.security.RecentAuthentication;
 import it.liberheroum.services.AppUserService;
 import it.liberheroum.services.DocumentService;
 import it.liberheroum.services.DocumentSlots;
-import it.liberheroum.services.KeycloakUserService;
 import it.liberheroum.services.PessimisticLocks;
+import it.liberheroum.services.ResourceAccessGuard;
 import it.liberheroum.unit.support.QueryStub;
 import jakarta.persistence.PersistenceException;
 import java.sql.SQLException;
@@ -86,7 +87,7 @@ class AppUserServiceTest {
     @Mock
     private Transaction transaction;
     @Mock
-    private KeycloakUserService keycloakUserService;
+    private IdentityProviderAdmin identityProviderAdmin;
 
     private final AppUserConfig config = new AppUserConfig();
     private final MultipartFile file = new MockMultipartFile("file", "avatar.png", "image/png", new byte[]{1});
@@ -97,9 +98,9 @@ class AppUserServiceTest {
     @BeforeEach
     void setUp() {
         service = new AppUserService(database, jwtInspector, JsonMapper.builder().build(), config, documentService,
-                new RecentAuthentication(jwtInspector, Clock.fixed(NOW, ZoneOffset.UTC)), keycloakUserService,
+                new RecentAuthentication(jwtInspector, Clock.fixed(NOW, ZoneOffset.UTC)), identityProviderAdmin,
                 new DocumentSlots(database, documentService),
-                new PessimisticLocks(database));
+                new PessimisticLocks(database), new ResourceAccessGuard(database, jwtInspector));
         lenient().when(jwtInspector.getSubject()).thenReturn(SUBJECT);
         users = stubFindLeniently(database, AppUser.class);
     }
@@ -107,7 +108,7 @@ class AppUserServiceTest {
     private AppUser storedUser(String email) {
         AppUser user = new AppUser();
         user.setId(USER_ID);
-        user.setKeycloakId(SUBJECT);
+        user.setSubject(SUBJECT);
         user.setEmail(email);
         return user;
     }
@@ -120,7 +121,7 @@ class AppUserServiceTest {
     }
 
     private void givenStoredUser(AppUser user) {
-        when(users.where().findOneOrEmpty()).thenReturn(Optional.of(user));
+        lenient().when(users.where().findOneOrEmpty()).thenReturn(Optional.of(user));
         lenient().when(users.where().findOne()).thenReturn(user);
     }
 
@@ -397,8 +398,8 @@ class AppUserServiceTest {
 
         service.deleteAppUser();
 
-        InOrder order = inOrder(keycloakUserService, database);
-        order.verify(keycloakUserService).deleteKeycloakUser(SUBJECT);
+        InOrder order = inOrder(identityProviderAdmin, database);
+        order.verify(identityProviderAdmin).deleteUser(SUBJECT);
         order.verify(database).beginTransaction();
     }
 
@@ -408,7 +409,7 @@ class AppUserServiceTest {
 
         service.deleteAppUser();
 
-        verify(keycloakUserService).deleteKeycloakUser(SUBJECT);
+        verify(identityProviderAdmin).deleteUser(SUBJECT);
         verify(database, never()).beginTransaction();
         verifyNoInteractions(documentService);
     }
@@ -416,7 +417,7 @@ class AppUserServiceTest {
     @Test
     void deleteAppUser_keycloakFails_propagatesTheExceptionAndTouchesNoData() {
         givenRecentAuthentication();
-        doThrow(new ResponseStatusException(HttpStatus.BAD_GATEWAY, "down")).when(keycloakUserService).deleteKeycloakUser(SUBJECT);
+        doThrow(new ResponseStatusException(HttpStatus.BAD_GATEWAY, "down")).when(identityProviderAdmin).deleteUser(SUBJECT);
 
         Throwable thrown = catchThrowable(() -> service.deleteAppUser());
 
@@ -441,7 +442,7 @@ class AppUserServiceTest {
         Throwable thrown = catchThrowable(() -> service.deleteAppUser());
 
         assertThat(thrown).isInstanceOf(RecentAuthenticationRequiredException.class);
-        verifyNoInteractions(keycloakUserService, database, documentService);
+        verifyNoInteractions(identityProviderAdmin, database, documentService);
     }
 
     @Test

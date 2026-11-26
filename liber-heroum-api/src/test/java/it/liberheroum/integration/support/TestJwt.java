@@ -1,6 +1,8 @@
 package it.liberheroum.integration.support;
 
-import it.liberheroum.security.KeycloakRoleConverter;
+import it.liberheroum.config.KeycloakAdminConfig;
+import it.liberheroum.security.JwtRoleConverter;
+import it.liberheroum.security.KeycloakIdentityProvider;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +12,9 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 public final class TestJwt {
+
+    private static final JwtRoleConverter ROLES =
+            new JwtRoleConverter(new KeycloakIdentityProvider(null, new KeycloakAdminConfig(), duration -> { }));
 
     public static final String USER_SUBJECT = "6f1c2a8e-3b4d-4e5f-9a0b-1c2d3e4f5a6b";
     public static final String USER_EMAIL = "frodo@shire.example";
@@ -37,7 +42,7 @@ public final class TestJwt {
             builder.claim("auth_time", authTime.getEpochSecond());
         }
         Jwt jwt = builder.build();
-        return new JwtAuthenticationToken(jwt, new KeycloakRoleConverter().convert(jwt), subject);
+        return new JwtAuthenticationToken(jwt, ROLES.convert(jwt), subject);
     }
 
     public static RequestPostProcessor as(String subject, String email, String... roles) {

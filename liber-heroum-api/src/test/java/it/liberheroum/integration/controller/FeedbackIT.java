@@ -14,11 +14,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -74,10 +72,6 @@ class FeedbackIT extends AbstractIntegrationTest {
 
     private UUID sendFeedback(MockMultipartFile... files) {
         return sendFeedback("idea", "Great tags", files);
-    }
-
-    private void sendFromAddress(RequestPostProcessor address, int times) {
-        IntStream.range(0, times).forEach(index -> form(address, "idea", "Message " + index).exchange());
     }
 
     private String storedStatus(UUID id) {
@@ -226,45 +220,6 @@ class FeedbackIT extends AbstractIntegrationTest {
     void findAllFeedbacks_apiDocs_requireBearerToken() {
         assertThat(mvc.get().uri("/v3/api-docs")).bodyJson().extractingPath("$.paths['/feedback'].get.security[0]")
                 .isEqualTo(Map.of("bearerAuth", List.of()));
-    }
-
-    // ---- rate limit ----
-
-    @Test
-    void createFeedback_sixthRequestFromSameAddress_isBlockedWithRetryAfterAndNothingSaved() {
-        RequestPostProcessor address = newAddress();
-        sendFromAddress(address, 4);
-
-        MvcTestResult fifth = form(address, "idea", "Fifth").exchange();
-        MvcTestResult sixth = form(address, "idea", "Sixth").exchange();
-
-        assertThat(fifth).hasStatus(HttpStatus.CREATED);
-        assertThat(sixth).hasStatus(HttpStatus.TOO_MANY_REQUESTS).headers().hasValue(HttpHeaders.RETRY_AFTER, "3600");
-        assertThat(sixth).bodyJson().extractingPath("$.title").isEqualTo("TOO_MANY_REQUESTS");
-        assertThat(countRows("feedback")).isEqualTo(5);
-    }
-
-    @Test
-    void createFeedback_invalidRequestsFromSameAddress_countTowardsTheLimit() {
-        RequestPostProcessor address = newAddress();
-        IntStream.range(0, 5).forEach(index -> mvc.post().uri("/feedback").multipart().with(address).param("type", "x").exchange());
-
-        assertThat(form(address, "idea", "Valid")).hasStatus(HttpStatus.TOO_MANY_REQUESTS);
-    }
-
-    @Test
-    void createFeedback_otherAddressAfterLimit_returnsCreated() {
-        sendFromAddress(newAddress(), 5);
-
-        assertThat(form()).hasStatus(HttpStatus.CREATED);
-    }
-
-    @Test
-    void findAllFeedbacks_manyAdminReadsFromSameAddress_areNotLimited() {
-        RequestPostProcessor address = newAddress();
-        IntStream.range(0, 6).forEach(index -> mvc.get().uri("/feedback").with(address).with(ADMIN).exchange());
-
-        assertThat(mvc.get().uri("/feedback").with(address).with(ADMIN)).hasStatusOk();
     }
 
     // ---- admin routes: access ----

@@ -37,18 +37,18 @@ public class DiaryPageTagService {
 
     private final Database database;
     private final JwtInspector jwtInspector;
-    private final OwnedResources ownedResources;
+    private final ResourceAccessGuard accessGuard;
     private final PessimisticLocks pessimisticLocks;
 
     public PagedResultDTO<BaseDiaryTagDTO> findAllDiaryTagsByDiary(UUID diaryId, DiaryTagSearchRequest request) {
-        ownedResources.getDiaryByIdAndOwner(diaryId);
+        accessGuard.getDiaryByIdAndOwner(diaryId);
         ExpressionList<DiaryPageTag> query = database.find(DiaryPageTag.class)
                 .setLabel("findAllDiaryTagsByDiary")
                 .select("name")
                 .fetch("page", "pageNumber")
                 .where()
                 .eq("diary.id", diaryId)
-                .eq("diary.character.owner.keycloakId", jwtInspector.getSubject());
+                .eq("diary.character.owner.subject", jwtInspector.getSubject());
         request.applyFilter(query);
         List<DiaryPageTag> tags = query.orderBy("page.pageNumber").findList();
         Map<String, List<DiaryPageTag>> groups = new LinkedHashMap<>();
@@ -72,21 +72,21 @@ public class DiaryPageTagService {
         return database.find(DiaryPageTag.class)
                 .setLabel("findTagByPages")
                 .select("name, page")
-                .where().in("page.id", pageIds).eq("diary.character.owner.keycloakId", jwtInspector.getSubject())
+                .where().in("page.id", pageIds).eq("diary.character.owner.subject", jwtInspector.getSubject())
                 .findList().stream()
                 .collect(Collectors.toMap(tag -> tag.getPage().getId(), DiaryPageTag::getName, (first, second) -> first));
     }
 
     public DetailDiaryPageTagDTO updateDiaryPageTag(UUID pageId, UpdateDiaryPageTagDTO request) {
-        UUID diaryId = ownedResources.getDiaryPageReferenceByIdAndOwner(pageId).getDiary().getId();
+        UUID diaryId = accessGuard.getDiaryPageReferenceByIdAndOwner(pageId).getDiary().getId();
         String requested = request.tag() == null ? null : request.tag().trim();
         String result;
         try (Transaction transaction = database.beginTransaction()) {
             Diary diary = pessimisticLocks.lockDiary(diaryId, "Page not found");
-            ownedResources.getDiaryPageReferenceByIdAndOwner(pageId);
+            accessGuard.getDiaryPageReferenceByIdAndOwner(pageId);
             DiaryPageTag current = database.find(DiaryPageTag.class)
                     .setLabel("updateDiaryPageTag")
-                    .where().eq("page.id", pageId).eq("diary.character.owner.keycloakId", jwtInspector.getSubject())
+                    .where().eq("page.id", pageId).eq("diary.character.owner.subject", jwtInspector.getSubject())
                     .findOne();
             if (requested == null) {
                 if (current != null) {
@@ -102,7 +102,7 @@ public class DiaryPageTagService {
                 if (current == null) {
                     current = new DiaryPageTag();
                     current.setDiary(diary);
-                    current.setPage(ownedResources.getDiaryPageReferenceByIdAndOwner(pageId));
+                    current.setPage(accessGuard.getDiaryPageReferenceByIdAndOwner(pageId));
                 }
                 if (!name.equals(current.getName())) {
                     current.setName(name);
@@ -125,7 +125,7 @@ public class DiaryPageTagService {
         return database.find(DiaryPageTag.class)
                 .setLabel("findOtherTagsOfDiary")
                 .select("name")
-                .where().eq("diary.id", diaryId).ne("page.id", pageId).eq("diary.character.owner.keycloakId", jwtInspector.getSubject())
+                .where().eq("diary.id", diaryId).ne("page.id", pageId).eq("diary.character.owner.subject", jwtInspector.getSubject())
                 .orderBy("name")
                 .findList().stream()
                 .collect(Collectors.toMap(tag -> key(tag.getName()), DiaryPageTag::getName, (first, second) -> first, LinkedHashMap::new));

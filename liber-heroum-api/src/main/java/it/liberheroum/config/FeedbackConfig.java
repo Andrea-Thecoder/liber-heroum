@@ -6,13 +6,11 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
-import java.time.Duration;
 import java.time.ZoneId;
 
 @Getter
@@ -32,11 +30,6 @@ public class FeedbackConfig {
     private DataSize maxTechnicalInfoSize = DataSize.ofKilobytes(2);
     @NotNull
     private ZoneId timezone = ZoneId.of("Europe/Rome");
-    @Positive
-    private int rateLimitMaxRequests = 5;
-    @NotNull
-    @DurationMin(seconds = 1)
-    private Duration rateLimitWindow = Duration.ofHours(1);
 
     @AssertTrue(message = "app.feedback.max-total-file-size must be greater than zero")
     public boolean isMaxTotalFileSizePositive() {

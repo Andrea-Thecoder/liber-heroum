@@ -22,7 +22,7 @@ import it.liberheroum.model.GameCharacter;
 import it.liberheroum.model.GameCharacterKind;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.services.CharacterBackgroundService;
-import it.liberheroum.services.OwnedResources;
+import it.liberheroum.services.ResourceAccessGuard;
 import it.liberheroum.services.DiaryPageContentValidator;
 import it.liberheroum.services.PessimisticLocks;
 import it.liberheroum.unit.support.QueryStub;
@@ -67,7 +67,7 @@ class CharacterBackgroundServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CharacterBackgroundService(database, jwtInspector, JsonMapper.builder().build(), config, contentValidator, new OwnedResources(database, jwtInspector),
+        service = new CharacterBackgroundService(database, jwtInspector, JsonMapper.builder().build(), config, contentValidator, new ResourceAccessGuard(database, jwtInspector),
                 new PessimisticLocks(database));
     }
 

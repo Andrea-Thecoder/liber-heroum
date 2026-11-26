@@ -10,6 +10,7 @@ import it.liberheroum.exception.ServiceException;
 import it.liberheroum.exception.SqlStates;
 import it.liberheroum.model.AppUser;
 import it.liberheroum.model.Document;
+import it.liberheroum.security.IdentityProviderAdmin;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.security.RecentAuthentication;
 import jakarta.persistence.PersistenceException;
@@ -38,44 +39,45 @@ public class AppUserService {
     private final AppUserConfig config;
     private final DocumentService documentService;
     private final RecentAuthentication recentAuthentication;
-    private final KeycloakUserService keycloakUserService;
+    private final IdentityProviderAdmin identityProviderAdmin;
     private final DocumentSlots documentSlots;
     private final PessimisticLocks pessimisticLocks;
+    private final ResourceAccessGuard accessGuard;
 
     public UUID createAppUser() {
-        String keycloakId = jwtInspector.getSubject();
+        String subject = jwtInspector.getSubject();
         String email = jwtInspector.getEmail();
         if (StringUtils.isBlank(email)) {
             throw new ServiceException("The token has no email address");
         }
-        AppUser user = findAppUserByKeycloakId(keycloakId)
+        AppUser user = findAppUserBySubject(subject)
                 .map(existing -> updateAppUserEmail(existing, email))
-                .orElseGet(() -> insertAppUser(keycloakId, email));
+                .orElseGet(() -> insertAppUser(subject, email));
         return user.getId();
     }
 
     public DetailAppUserDTO getAppUserBySubject() {
-        AppUser user = findAppUserOrThrow();
+        AppUser user = accessGuard.getCurrentAppUser();
         return DetailAppUserDTO.from(user, documentService.getDocumentUrl(user.getAvatarDocument()));
     }
 
     public String updateAppUserAvatar(MultipartFile file) {
-        AppUser user = findAppUserOrThrow();
+        AppUser user = accessGuard.getCurrentAppUser();
         Document avatar = documentSlots.replace(user, user.getAvatarDocument(), user::setAvatarDocument,
                 () -> documentService.createImageDocument(file));
         return documentService.getDocumentUrl(avatar);
     }
 
     public void deleteAppUserAvatar() {
-        AppUser user = findAppUserOrThrow();
+        AppUser user = accessGuard.getCurrentAppUser();
         documentSlots.clear(user, user.getAvatarDocument(), user::setAvatarDocument);
     }
 
     public void deleteAppUser() {
         recentAuthentication.require(config.getDeleteMaxAuthAge());
         String subject = jwtInspector.getSubject();
-        keycloakUserService.deleteKeycloakUser(subject);
-        Optional<AppUser> found = findAppUserByKeycloakId(subject);
+        identityProviderAdmin.deleteUser(subject);
+        Optional<AppUser> found = findAppUserBySubject(subject);
         if (found.isEmpty()) {
             return;
         }
@@ -94,7 +96,7 @@ public class AppUserService {
     }
 
     public Map<String, Object> updateAppUserSettings(UpdateSettingsAppUserDTO settings) {
-        AppUser user = findAppUserOrThrow();
+        AppUser user = accessGuard.getCurrentAppUser();
         Map<String, Object> merged = user.getSettings() == null ? new HashMap<>() : new HashMap<>(user.getSettings());
         settings.settings().forEach((key, value) -> {
             if (value == null) {
@@ -109,10 +111,6 @@ public class AppUserService {
         return merged;
     }
 
-    private AppUser findAppUserOrThrow() {
-        return findAppUserByKeycloakId(jwtInspector.getSubject())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-    }
 
     private void validateSettings(Map<String, Object> settings) {
         if (containsUnstorableText(settings)) {
@@ -133,15 +131,15 @@ public class AppUserService {
         };
     }
 
-    private AppUser insertAppUser(String keycloakId, String email) {
+    private AppUser insertAppUser(String subject, String email) {
         AppUser user = new AppUser();
-        user.setKeycloakId(keycloakId);
+        user.setSubject(subject);
         user.setEmail(email);
         try {
             database.save(user);
             return user;
         } catch (DuplicateKeyException e) {
-            return findAppUserByKeycloakId(keycloakId)
+            return findAppUserBySubject(subject)
                     .orElseThrow(() -> new ServiceException("User not found"));
         }
     }
@@ -154,7 +152,7 @@ public class AppUserService {
         return user;
     }
 
-    private Optional<AppUser> findAppUserByKeycloakId(String keycloakId) {
-        return database.find(AppUser.class).setLabel("findAppUserByKeycloakId").fetch("avatarDocument").where().eq("keycloakId", keycloakId).findOneOrEmpty();
+    private Optional<AppUser> findAppUserBySubject(String subject) {
+        return database.find(AppUser.class).setLabel("findAppUserBySubject").fetch("avatarDocument").where().eq("subject", subject).findOneOrEmpty();
     }
 }

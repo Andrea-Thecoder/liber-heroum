@@ -41,14 +41,14 @@ public class DiaryPageService {
     private final DiaryPageConfig config;
     private final DiaryPageContentValidator contentValidator;
     private final DiaryPageTagService tagService;
-    private final OwnedResources ownedResources;
+    private final ResourceAccessGuard accessGuard;
     private final PessimisticLocks pessimisticLocks;
 
     public PagedResultDTO<BaseDiaryPageDTO> findAllDiaryPagesByDiary(UUID diaryId, int page) {
         if (page < 1) {
             throw new ServiceException("The page must be 1 or greater");
         }
-        Diary diary = ownedResources.getDiaryByIdAndOwner(diaryId);
+        Diary diary = accessGuard.getDiaryByIdAndOwner(diaryId);
         ExpressionList<DiaryPage> query = database.find(DiaryPage.class)
                 .setLabel("findAllDiaryPagesByDiary")
                 .where().eq("diary.id", diary.getId())
@@ -61,7 +61,7 @@ public class DiaryPageService {
     }
 
     public BaseDiaryPageDTO createDiaryPage(UUID diaryId, InsertDiaryPageDTO request) {
-        Diary diary = ownedResources.getDiaryByIdAndOwner(diaryId);
+        Diary diary = accessGuard.getDiaryByIdAndOwner(diaryId);
         validateContent(request.content());
         DiaryPage page = new DiaryPage();
         page.setDiary(diary);
@@ -88,7 +88,7 @@ public class DiaryPageService {
     }
 
     public BaseDiaryPageDTO updateDiaryPage(UUID id, UpdateDiaryPageDTO request) {
-        DiaryPage page = ownedResources.getDiaryPageByIdAndOwner(id);
+        DiaryPage page = accessGuard.getDiaryPageByIdAndOwner(id);
         if (!Objects.equals(page.getVersion(), request.version())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "The page was modified elsewhere, reload it");
         }
@@ -99,10 +99,10 @@ public class DiaryPageService {
     }
 
     public void deleteDiaryPage(UUID id) {
-        UUID diaryId = ownedResources.getDiaryPageByIdAndOwner(id).getDiary().getId();
+        UUID diaryId = accessGuard.getDiaryPageByIdAndOwner(id).getDiary().getId();
         try (Transaction transaction = database.beginTransaction()) {
             pessimisticLocks.lockDiary(diaryId, "Page not found");
-            DiaryPage page = ownedResources.getDiaryPageByIdAndOwner(id);
+            DiaryPage page = accessGuard.getDiaryPageByIdAndOwner(id);
             database.delete(page);
             List<DiaryPage> following = database.find(DiaryPage.class)
                     .setLabel("deleteDiaryPage")

@@ -26,13 +26,13 @@ public class CharacterBackgroundPdfService {
     private final Database database;
     private final JwtInspector jwtInspector;
     private final RichTextPdfRenderer renderer;
-    private final OwnedResources ownedResources;
+    private final ResourceAccessGuard accessGuard;
 
     public BackgroundPdf getCharacterBackgroundPdf(UUID characterId) {
         GameCharacter character = getPlayerCharacterByIdAndOwner(characterId);
         CharacterBackground background = database.find(CharacterBackground.class)
                 .setLabel("getCharacterBackgroundPdf")
-                .where().eq("character.id", characterId).eq("character.owner.keycloakId", jwtInspector.getSubject())
+                .where().eq("character.id", characterId).eq("character.owner.subject", jwtInspector.getSubject())
                 .findOne();
         if (background == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Background not found");
@@ -47,7 +47,7 @@ public class CharacterBackgroundPdfService {
     }
 
     private GameCharacter getPlayerCharacterByIdAndOwner(UUID id) {
-        GameCharacter character = ownedResources.getGameCharacterByIdAndOwner(id);
+        GameCharacter character = accessGuard.getGameCharacterByIdAndOwner(id);
         if (character.getKind() == GameCharacterKind.GAME_MASTER) {
             throw new ServiceException("A game master has no background");
         }

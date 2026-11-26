@@ -6,12 +6,12 @@ create table app_user (
   created_at                    timestamptz not null,
   updated_at                    timestamptz not null,
   version                       bigint not null,
-  keycloak_id                   varchar(36) not null,
+  subject                       varchar(255) not null,
   email                         varchar(255),
   settings                      jsonb,
   created_by                    varchar not null,
   updated_by                    varchar not null,
-  constraint uq_app_user_keycloak_id unique (keycloak_id),
+  constraint uq_app_user_subject unique (subject),
   constraint pk_app_user primary key (id)
 );
 

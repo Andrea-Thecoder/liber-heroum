@@ -65,7 +65,7 @@ class UserExportIT extends AbstractIntegrationTest {
     }
 
     private AppUser appUser(String subject) {
-        return database.find(AppUser.class).where().eq("keycloakId", subject).findOne();
+        return database.find(AppUser.class).where().eq("subject", subject).findOne();
     }
 
     private void savePayment(AppUser owner, String description) {

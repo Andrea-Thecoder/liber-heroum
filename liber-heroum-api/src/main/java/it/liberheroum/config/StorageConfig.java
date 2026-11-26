@@ -12,10 +12,12 @@ import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
+import java.time.ZoneId;
 import java.util.List;
 
 @Getter
@@ -46,6 +48,14 @@ public class StorageConfig {
     private DataSize maxPdfFileSize = DataSize.ofMegabytes(10);
     @NotEmpty
     private List<String> allowedMimeTypes = List.of("image/png", "image/jpeg", "image/webp", "application/pdf");
+    private boolean orphanCleanupEnabled = true;
+    @NotBlank
+    private String orphanCleanupCron = "0 0 3 * * *";
+    @NotNull
+    private ZoneId orphanCleanupZone = ZoneId.of("Europe/Rome");
+    @NotNull
+    @DurationMin(hours = 1)
+    private Duration orphanMinAge = Duration.ofHours(24);
 
     @AssertTrue(message = "app.storage.max-file-size must be greater than zero")
     public boolean isMaxFileSizePositive() {
@@ -55,6 +65,11 @@ public class StorageConfig {
     @AssertTrue(message = "app.storage.max-pdf-file-size must be greater than zero")
     public boolean isMaxPdfFileSizePositive() {
         return maxPdfFileSize == null || maxPdfFileSize.toBytes() > 0;
+    }
+
+    @AssertTrue(message = "app.storage.orphan-cleanup-cron must be a cron expression")
+    public boolean isOrphanCleanupCronValid() {
+        return orphanCleanupCron == null || CronExpression.isValidExpression(orphanCleanupCron);
     }
 
     @Bean

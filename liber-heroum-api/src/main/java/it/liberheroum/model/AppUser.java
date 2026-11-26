@@ -22,8 +22,8 @@ public class AppUser extends AbstractAuditable {
     @GeneratedValue
     private UUID id;
 
-    @Column(name = "keycloak_id", nullable = false, unique = true, length = 36)
-    private String keycloakId;
+    @Column(name = "subject", nullable = false, unique = true, length = 255)
+    private String subject;
 
     @Column(name = "email", length = 255)
     @Index

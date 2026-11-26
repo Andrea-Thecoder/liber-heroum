@@ -46,8 +46,8 @@ class AppUserIT extends AbstractIntegrationTest {
     void createAppUser_firstCall_storesSubjectAndEmailOfToken() {
         createAppUser();
 
-        Map<String, Object> user = jdbc.queryForMap("select keycloak_id, email from app_user");
-        assertThat(user).containsExactlyInAnyOrderEntriesOf(Map.of("keycloak_id", TestJwt.USER_SUBJECT, "email", TestJwt.USER_EMAIL));
+        Map<String, Object> user = jdbc.queryForMap("select subject, email from app_user");
+        assertThat(user).containsExactlyInAnyOrderEntriesOf(Map.of("subject", TestJwt.USER_SUBJECT, "email", TestJwt.USER_EMAIL));
     }
 
     @Test

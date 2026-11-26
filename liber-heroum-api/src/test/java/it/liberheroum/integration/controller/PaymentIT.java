@@ -33,7 +33,7 @@ class PaymentIT extends AbstractIntegrationTest {
 
     private AppUser createUser(String subject, RequestPostProcessor user) {
         createAppUser(user);
-        return database.find(AppUser.class).where().eq("keycloakId", subject).findOne();
+        return database.find(AppUser.class).where().eq("subject", subject).findOne();
     }
 
     private AppUser createCurrentUser() {

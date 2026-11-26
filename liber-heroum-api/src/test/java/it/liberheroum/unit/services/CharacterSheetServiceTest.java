@@ -31,7 +31,7 @@ import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.services.CharacterSheetService;
-import it.liberheroum.services.OwnedResources;
+import it.liberheroum.services.ResourceAccessGuard;
 import it.liberheroum.services.DocumentService;
 import it.liberheroum.services.DocumentSlots;
 import it.liberheroum.services.PessimisticLocks;
@@ -77,7 +77,7 @@ class CharacterSheetServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CharacterSheetService(database, jwtInspector, documentService, config, new OwnedResources(database, jwtInspector),
+        service = new CharacterSheetService(database, documentService, config, new ResourceAccessGuard(database, jwtInspector),
                 new DocumentSlots(database, documentService),
                 new PessimisticLocks(database));
         when(jwtInspector.getSubject()).thenReturn(SUBJECT);

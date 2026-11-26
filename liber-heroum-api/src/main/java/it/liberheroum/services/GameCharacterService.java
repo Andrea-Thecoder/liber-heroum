@@ -30,7 +30,7 @@ public class GameCharacterService {
     private final JwtInspector jwtInspector;
     private final DocumentService documentService;
     private final CharacterBackgroundService backgroundService;
-    private final OwnedResources ownedResources;
+    private final ResourceAccessGuard accessGuard;
     private final DocumentSlots documentSlots;
     private final PessimisticLocks pessimisticLocks;
 
@@ -39,7 +39,7 @@ public class GameCharacterService {
                 .setLabel("findAllGameCharacters")
                 .fetch("avatarDocument")
                 .where()
-                .eq("owner.keycloakId", jwtInspector.getSubject());
+                .eq("owner.subject", jwtInspector.getSubject());
         request.applyFilter(query);
         request.applySortAndPagination(query, "name");
         return PagedResultDTO.of(query.findPagedList(),
@@ -48,11 +48,11 @@ public class GameCharacterService {
     }
 
     public DetailGameCharacterDTO getGameCharacterById(UUID id) {
-        return toDetailGameCharacterDTO(ownedResources.getGameCharacterWithAvatarByIdAndOwner(id));
+        return toDetailGameCharacterDTO(accessGuard.getGameCharacterWithAvatarByIdAndOwner(id));
     }
 
     public DetailGameCharacterDTO createGameCharacter(InsertGameCharacterDTO request) {
-        AppUser user = getAppUserBySubject();
+        AppUser user = accessGuard.getCurrentAppUser();
         GameCharacter character = new GameCharacter();
         character.setOwner(user);
         character.setKind(request.kind());
@@ -69,26 +69,26 @@ public class GameCharacterService {
     }
 
     public DetailGameCharacterDTO updateGameCharacter(UUID id, UpdateGameCharacterDTO request) {
-        GameCharacter character = ownedResources.getGameCharacterWithAvatarByIdAndOwner(id);
+        GameCharacter character = accessGuard.getGameCharacterWithAvatarByIdAndOwner(id);
         apply(character, request.name(), request.campaignName(), request.backgroundColor());
         database.save(character);
         return toDetailGameCharacterDTO(character);
     }
 
     public DetailGameCharacterDTO updateGameCharacterAvatar(UUID id, MultipartFile file) {
-        GameCharacter character = ownedResources.getGameCharacterWithAvatarByIdAndOwner(id);
+        GameCharacter character = accessGuard.getGameCharacterWithAvatarByIdAndOwner(id);
         documentSlots.replace(character, character.getAvatarDocument(), character::setAvatarDocument,
                 () -> documentService.createImageDocument(file));
         return toDetailGameCharacterDTO(character);
     }
 
     public void deleteGameCharacterAvatar(UUID id) {
-        GameCharacter character = ownedResources.getGameCharacterWithAvatarByIdAndOwner(id);
+        GameCharacter character = accessGuard.getGameCharacterWithAvatarByIdAndOwner(id);
         documentSlots.clear(character, character.getAvatarDocument(), character::setAvatarDocument);
     }
 
     public void deleteGameCharacter(UUID id) {
-        GameCharacter character = ownedResources.getGameCharacterByIdAndOwner(id);
+        GameCharacter character = accessGuard.getGameCharacterByIdAndOwner(id);
         try {
             documentSlots.deleteWithDocuments(
                     () -> pessimisticLocks.lockGameCharacter(character.getId()),
@@ -102,16 +102,6 @@ public class GameCharacterService {
         }
     }
 
-    private AppUser getAppUserBySubject() {
-        AppUser user = database.find(AppUser.class)
-                .setLabel("getAppUserBySubject")
-                .where().eq("keycloakId", jwtInspector.getSubject())
-                .findOne();
-        if (user == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
-        return user;
-    }
 
     private DetailGameCharacterDTO toDetailGameCharacterDTO(GameCharacter character) {
         return DetailGameCharacterDTO.from(character,

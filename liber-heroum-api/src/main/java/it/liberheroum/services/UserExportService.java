@@ -17,9 +17,7 @@ import it.liberheroum.security.JwtInspector;
 import it.liberheroum.security.RecentAuthentication;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -64,6 +62,7 @@ public class UserExportService {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final RichTextPdfRenderer renderer;
+    private final ResourceAccessGuard accessGuard;
 
     public UserExport getUserExport() {
         recentAuthentication.require(config.getExportMaxAuthAge());
@@ -71,7 +70,7 @@ public class UserExportService {
         Instant now = clock.instant();
         try (Transaction transaction = database.beginTransaction(
                 TxScope.required().setReadOnly(true).setIsolation(TxIsolation.REPEATABLE_READ))) {
-            AppUser user = getUserExportAccount(subject);
+            AppUser user = accessGuard.getCurrentAppUser();
             List<UserExport.Entry> files = new ArrayList<>();
             addStoredFile(files, "profilo/avatar", user.getAvatarDocument());
             List<UserExport.Character> characters = exportCharacters(subject, files);
@@ -107,31 +106,31 @@ public class UserExportService {
         List<GameCharacter> characters = database.find(GameCharacter.class)
                 .setLabel("exportCharacters")
                 .fetch("avatarDocument")
-                .where().eq("owner.keycloakId", subject)
+                .where().eq("owner.subject", subject)
                 .orderBy("name asc, id asc")
                 .findList();
         Map<UUID, Map<String, Object>> backgrounds = database.find(CharacterBackground.class)
                 .setLabel("exportBackgrounds")
-                .where().eq("character.owner.keycloakId", subject)
+                .where().eq("character.owner.subject", subject)
                 .findList().stream()
                 .collect(Collectors.toMap(background -> background.getCharacter().getId(), CharacterBackground::getContent));
         Map<UUID, List<CharacterSheet>> sheets = database.find(CharacterSheet.class)
                 .setLabel("exportSheets")
                 .fetch("document")
-                .where().eq("character.owner.keycloakId", subject)
+                .where().eq("character.owner.subject", subject)
                 .orderBy("title asc, id asc")
                 .findList().stream()
                 .collect(Collectors.groupingBy(sheet -> sheet.getCharacter().getId()));
         Map<UUID, List<Diary>> diaries = database.find(Diary.class)
                 .setLabel("exportDiaries")
                 .fetch("coverDocument")
-                .where().eq("character.owner.keycloakId", subject)
+                .where().eq("character.owner.subject", subject)
                 .orderBy("title asc, id asc")
                 .findList().stream()
                 .collect(Collectors.groupingBy(diary -> diary.getCharacter().getId()));
         Map<UUID, List<DiaryPage>> pages = database.find(DiaryPage.class)
                 .setLabel("exportPages")
-                .where().eq("diary.character.owner.keycloakId", subject)
+                .where().eq("diary.character.owner.subject", subject)
                 .orderBy("pageNumber asc")
                 .findList().stream()
                 .collect(Collectors.groupingBy(page -> page.getDiary().getId()));
@@ -191,22 +190,11 @@ public class UserExportService {
     private List<Payment> findPayments(String subject) {
         return database.find(Payment.class)
                 .setLabel("findPayments")
-                .where().eq("appUser.keycloakId", subject)
+                .where().eq("appUser.subject", subject)
                 .orderBy("paidAt desc nulls last, id asc")
                 .findList();
     }
 
-    private AppUser getUserExportAccount(String subject) {
-        AppUser user = database.find(AppUser.class)
-                .setLabel("getUserExportAccount")
-                .fetch("avatarDocument")
-                .where().eq("keycloakId", subject)
-                .findOne();
-        if (user == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
-        return user;
-    }
 
     private static String readme(String email, Instant now) {
         return """

@@ -30,7 +30,7 @@ import it.liberheroum.model.DiaryPage;
 import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
 import it.liberheroum.security.JwtInspector;
-import it.liberheroum.services.OwnedResources;
+import it.liberheroum.services.ResourceAccessGuard;
 import it.liberheroum.services.DiaryService;
 import it.liberheroum.services.DocumentService;
 import it.liberheroum.services.DocumentSlots;
@@ -75,7 +75,7 @@ class DiaryServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DiaryService(database, jwtInspector, documentService, new OwnedResources(database, jwtInspector),
+        service = new DiaryService(database, jwtInspector, documentService, new ResourceAccessGuard(database, jwtInspector),
                 new DocumentSlots(database, documentService),
                 new PessimisticLocks(database));
         when(jwtInspector.getSubject()).thenReturn(SUBJECT);

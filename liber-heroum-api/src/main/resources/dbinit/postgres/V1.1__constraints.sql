@@ -38,3 +38,12 @@ create index if not exists ix_feedback_created_at on feedback (created_at);
 alter table payment add constraint ck_payment_amount_cents check (amount_cents >= 0);
 alter table payment add constraint ck_payment_currency check (currency ~ '^[A-Z]{3}$');
 alter table payment add constraint ck_payment_customer_country check (customer_country is null or customer_country ~ '^[A-Z]{2}$');
+
+-- shedlock: lock dei job schedulati, cosi' con piu' istanze del backend un job parte una volta sola (ShedLock, JdbcTemplateLockProvider)
+create table shedlock (
+  name                          varchar(64) not null,
+  lock_until                    timestamp not null,
+  locked_at                     timestamp not null,
+  locked_by                     varchar(255) not null,
+  constraint pk_shedlock primary key (name)
+);

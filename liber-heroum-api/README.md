@@ -102,6 +102,10 @@ Le immagini sono salvate in uno storage compatibile S3. In locale viene utilizza
 | `app.storage.access-key` | `admin` |
 | `app.storage.secret-key` | `secret` |
 | `app.storage.create-buckets` | `true` (il backend crea i bucket all'avvio se mancano) |
+| `app.storage.orphan-cleanup-enabled` | `true` (accende la pulizia dei file orfani) |
+| `app.storage.orphan-cleanup-cron` | `0 0 3 * * *` (pulizia dei file orfani ogni notte alle 3) |
+| `app.storage.orphan-cleanup-zone` | `Europe/Rome` (fuso dell'orario della pulizia) |
+| `app.storage.orphan-min-age` | `24h` (età minima di un file senza riga in `document` prima di cancellarlo, almeno `1h`) |
 
 ### Configurazione Feedback
 
@@ -114,8 +118,6 @@ Il modulo pubblico del feedback (`POST /feedback`, senza token) salva gli screen
 | `app.feedback.max-total-file-size` | `5MB` (in totale, per tutti i file) |
 | `app.feedback.max-technical-info-size` | `2KB` |
 | `app.feedback.timezone` | `Europe/Rome` (fuso dei filtri per data della lista) |
-| `app.feedback.rate-limit-max-requests` | `5` (per indirizzo) |
-| `app.feedback.rate-limit-window` | `1h` |
 
 ### Configurazione SMTP
 

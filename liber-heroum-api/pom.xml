@@ -32,6 +32,7 @@
         <commons-lang3.version>3.21.0</commons-lang3.version>
         <commons-collections4.version>4.6.0</commons-collections4.version>
         <ebean.version>19.6.0</ebean.version>
+        <shedlock.version>7.11.0</shedlock.version>
         <lombok.version>1.18.48</lombok.version>
         <springdoc-openapi-starter-webmvc-ui.version>3.1.1</springdoc-openapi-starter-webmvc-ui.version>
         <keycloak-admin-client.version>26.0.12</keycloak-admin-client.version>
@@ -64,6 +65,11 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-jdbc</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>net.javacrumbs.shedlock</groupId>
+			<artifactId>shedlock-provider-jdbc-template</artifactId>
+			<version>${shedlock.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

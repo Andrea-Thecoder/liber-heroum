@@ -3,13 +3,11 @@ package it.liberheroum.unit.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import it.liberheroum.security.AppRole;
 import it.liberheroum.security.JwtInspector;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -40,57 +38,6 @@ class JwtInspectorTest {
 
     private static void authenticate(Jwt jwt) {
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
-    }
-
-    @Test
-    void extractRoles_knownRealmRoles_returnsRoles() {
-        Set<AppRole> roles = JwtInspector.extractRoles(jwtWithRoles("user", "admin"));
-
-        assertThat(roles).containsExactlyInAnyOrder(AppRole.USER, AppRole.ADMIN);
-    }
-
-    @Test
-    void extractRoles_mixedCaseRoles_matchesIgnoringCase() {
-        Set<AppRole> roles = JwtInspector.extractRoles(jwtWithRoles("User", "ADMIN"));
-
-        assertThat(roles).containsExactlyInAnyOrder(AppRole.USER, AppRole.ADMIN);
-    }
-
-    @Test
-    void extractRoles_unknownRoles_discardsThem() {
-        Set<AppRole> roles = JwtInspector.extractRoles(jwtWithRoles("user", "offline_access", "uma_authorization", "master"));
-
-        assertThat(roles).containsExactly(AppRole.USER);
-    }
-
-    @Test
-    void extractRoles_nonStringRoles_ignoresThem() {
-        Set<AppRole> roles = JwtInspector.extractRoles(jwtWithRealmAccess(Map.of("roles", List.of(1, Map.of("name", "admin"), "user"))));
-
-        assertThat(roles).containsExactly(AppRole.USER);
-    }
-
-    @Test
-    void extractRoles_rolesNotAList_returnsEmpty() {
-        Set<AppRole> roles = JwtInspector.extractRoles(jwtWithRealmAccess(Map.of("roles", "admin")));
-
-        assertThat(roles).isEmpty();
-    }
-
-    @Test
-    void extractRoles_realmAccessWithoutRoles_returnsEmpty() {
-        Set<AppRole> roles = JwtInspector.extractRoles(jwtWithRealmAccess(Map.of()));
-
-        assertThat(roles).isEmpty();
-    }
-
-    @Test
-    void extractRoles_noRealmAccessClaim_returnsEmpty() {
-        Jwt jwt = Jwt.withTokenValue("token").header("alg", "none").subject(SUBJECT).build();
-
-        Set<AppRole> roles = JwtInspector.extractRoles(jwt);
-
-        assertThat(roles).isEmpty();
     }
 
     @Test

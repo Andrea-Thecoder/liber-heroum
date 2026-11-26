@@ -128,6 +128,12 @@ aws --endpoint-url http://localhost:8333 s3 mb s3://diary-documents
 aws --endpoint-url http://localhost:8333 s3 mb s3://feedback-documents
 ```
 
+### Pulizia dei file orfani
+
+Ogni notte alle 3 (ora di Roma) il backend cancella dai bucket `diary-documents` e `feedback-documents` i file che non hanno una riga nella tabella `document` e sono più vecchi di 24 ore (`OrphanFileCleanup`, schedulato da `SchedulingConfig`). I file più giovani restano perché potrebbero essere upload in corso. Nel log c'è una riga per ogni file cancellato e un riepilogo finale («Orphan file cleanup finished: N files deleted»); se lo storage non risponde scrive un avviso e riprova la notte dopo.
+
+Orario, fuso ed età minima si cambiano con `app.storage.orphan-cleanup-cron`, `app.storage.orphan-cleanup-zone` e `app.storage.orphan-min-age`; `app.storage.orphan-cleanup-enabled=false` spegne la pulizia. Con più istanze del backend la pulizia parte su una sola: le altre trovano il lock `orphanFileCleanup` nella tabella `shedlock` e scrivono nel log «Orphan file cleanup skipped: another instance holds the lock». Se un'istanza muore a metà, il lock scade da solo dopo un'ora.
+
 ### Leggere e cancellare i feedback
 
 I feedback arrivano da `POST /feedback` (pubblico) e si gestiscono dalla Swagger UI con il token di un utente `admin` (in locale `admin1`, vedi «Dare il ruolo `admin` a un utente»):
@@ -180,7 +186,7 @@ docker compose restart keycloak
 | 409 «... changed while it was being deleted, try again» | Difesa che non dovrebbe scattare: le cancellazioni di account, personaggi e diari bloccano la riga e cancellano in cascata anche quello che viene creato nel frattempo. | Ripetere la chiamata; se si ripete, controllare le chiavi esterne (devono essere `ON DELETE CASCADE`, vedi `SchemaIT`). |
 | 400 «Invalid page content at ...» | Il contenuto della pagina non rientra in quello che accetta il validatore (peso massimo 50 KB, profondità 50). | Il messaggio indica il punto. Se l'editor ha una funzione nuova, va aggiunta anche in `DiaryPageContentValidator`. Caso noto: incollando HTML con `<ol type="x">` l'editor produce un valore che il backend rifiuta. |
 | 400 «... contains characters that cannot be stored» | Il testo contiene il carattere NUL o metà di un'emoji. | Togliere i caratteri dal testo. |
-| `POST /feedback` risponde 429 con `Retry-After` | Più di 5 invii in un'ora dallo stesso indirizzo (`app.feedback.rate-limit-max-requests` e `rate-limit-window`). I contatori stanno in memoria. | Aspettare, oppure in sviluppo riavviare il backend. Dietro un reverse proxy, se il 429 arriva a tutti, l'indirizzo visto è quello del proxy: serve `server.forward-headers-strategy`. |
+| `POST /feedback` risponde 429 | Il limite di invii per indirizzo del reverse proxy (il backend non ha più un suo limite). | Aspettare, oppure controllare la regola del proxy. |
 | `POST /feedback` risponde 201 ma il feedback non c'è | Il campo trappola `website` era compilato: il backend scrive nel log «Feedback discarded: the trap field was filled» e non salva niente. | Non mandare il campo `website`, o mandarlo vuoto. |
 | `POST /feedback` risponde 400 «Too many files» o «Files too large» | Più di 3 immagini, oppure più di 5 MB in totale (`app.feedback.max-files`, `max-total-file-size`). | Ridurre gli screenshot. |
 
@@ -192,7 +198,7 @@ docker compose restart keycloak
 | 400 su un upload | Il contenuto vero non coincide con il tipo dichiarato o con l'estensione. Ammessi png, jpeg e webp. | Caricare un'immagine valida con il tipo corretto. |
 | Upload o lettura con errori dello storage | `seaweedfs` fermo, chiavi sbagliate o bucket mancante. | `docker compose ps`, controllare chiavi e bucket (vedi «Controllare lo storage»). |
 | L'immagine non si apre dopo un po' | L'indirizzo temporaneo scade dopo 5 minuti. | Richiedere di nuovo il personaggio o il diario per avere un indirizzo nuovo. |
-| File nel bucket senza riga nel database | La cancellazione dei file è best effort: se fallisce, il file resta. Non c'è ancora una pulizia automatica. | Confrontare gli `object_key` della tabella `document` con gli oggetti del bucket e cancellare a mano quelli che non compaiono. |
+| File nel bucket senza riga nel database | La cancellazione dei file è best effort: se fallisce, il file resta fino alla pulizia notturna. | Aspettare la pulizia delle 3 (vedi «Pulizia dei file orfani»); i file più giovani di `app.storage.orphan-min-age` (24 ore) restano fino alla notte dopo. |
 
 ### Keycloak
 
@@ -252,7 +258,8 @@ Ancora da definire. Prima di andare online:
 - [ ] CORS limitato all'origine esatta del frontend (`app.cors.allowed-origins`)
 - [ ] Intestazioni `X-Content-Type-Options: nosniff` e `Cache-Control: no-store` sulle risposte con dati personali
 - [ ] Chiavi e password fuori dal repository
-- [ ] Pulizia dei file orfani nello storage e antivirus sui file caricati
+- [ ] Antivirus sui file caricati
+- [ ] Limite di invii per indirizzo su `POST /feedback` nel reverse proxy (es. 5 all'ora): il backend non ne ha uno suo
 - [ ] Porta di Actuator (`8081`) mai pubblicata su internet né inoltrata dal reverse proxy: Prometheus la legge dalla rete interna. Con Docker non va messa in `ports:` (Docker scavalca il firewall `ufw`); valutare `management.server.address` sull'interfaccia interna. Password vera di Grafana e Grafana dietro login.
 - [ ] Avvisi sulle metriche (errori 5xx, tempi di risposta) da definire
 - [ ] Limite alla dimensione della richiesta a livello di server, oggi il peso si controlla dopo la lettura del corpo
