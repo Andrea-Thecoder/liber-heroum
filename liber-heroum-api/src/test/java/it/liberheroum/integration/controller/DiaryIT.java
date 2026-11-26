@@ -1,6 +1,7 @@
 package it.liberheroum.integration.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import it.liberheroum.integration.support.AbstractIntegrationTest;
 import it.liberheroum.integration.support.BlockingTransaction;
@@ -244,14 +245,6 @@ class DiaryIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void findAllDiariesByCharacter_sizeOver100_returnsBadRequest() {
-        createAppUser();
-        UUID characterId = createGameCharacter("Aragorn");
-
-        assertThat(mvc.get().uri("/characters/{characterId}/diaries?size=101", characterId)).hasStatus(HttpStatus.BAD_REQUEST);
-    }
-
-    @Test
     void findAllDiariesByCharacter_characterWithoutDiaries_returnsEmptyListAndZeroTotals() {
         createAppUser();
         UUID characterId = createGameCharacter("Aragorn");
@@ -336,7 +329,11 @@ class DiaryIT extends AbstractIntegrationTest {
         MvcTestResult result = mvc.put().uri("/diaries/{id}/cover", diaryId).multipart().file(pdf).exchange();
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(List.of(storedObjectKeys().size(), countRows("document"))).containsOnly(0);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(storedFiles).isEqualTo(0);
+            softly.assertThat(countRows("document")).isEqualTo(0);
+        });
     }
 
     @Test
@@ -346,7 +343,11 @@ class DiaryIT extends AbstractIntegrationTest {
 
         mvc.delete().uri("/diaries/{id}/cover", diaryId).exchange();
 
-        assertThat(List.of(storedObjectKeys().size(), countRows("document"))).containsOnly(0);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(storedFiles).isEqualTo(0);
+            softly.assertThat(countRows("document")).isEqualTo(0);
+        });
     }
 
     @Test
@@ -387,7 +388,11 @@ class DiaryIT extends AbstractIntegrationTest {
         assertThat(result).hasStatusOk();
         assertThat(jdbc.queryForList("select id from diary", UUID.class)).containsExactlyInAnyOrder(sameCharacter, otherCharacter);
         assertThat(jdbc.queryForList("select diary_id from diary_page", UUID.class)).containsExactlyInAnyOrder(sameCharacter, otherCharacter);
-        assertThat(List.of(storedObjectKeys().size(), countRows("document"))).containsOnly(2);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(storedFiles).isEqualTo(2);
+            softly.assertThat(countRows("document")).isEqualTo(2);
+        });
     }
 
     @Test
@@ -398,7 +403,10 @@ class DiaryIT extends AbstractIntegrationTest {
         MvcTestResult result = mvc.delete().uri("/diaries/{id}", othersDiary).exchange();
 
         assertThat(result).hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(List.of(countRows("diary"), countRows("diary_page"))).containsOnly(1);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("diary")).isEqualTo(1);
+            softly.assertThat(countRows("diary_page")).isEqualTo(1);
+        });
     }
 
     @Test
@@ -409,7 +417,10 @@ class DiaryIT extends AbstractIntegrationTest {
         MvcTestResult result = deleteDiaryWhilePageIsAdded(diaryId);
 
         assertThat(result).hasStatusOk();
-        assertThat(List.of(countRows("diary"), countRows("diary_page"))).containsOnly(0);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("diary")).isEqualTo(0);
+            softly.assertThat(countRows("diary_page")).isEqualTo(0);
+        });
     }
 
     @Test

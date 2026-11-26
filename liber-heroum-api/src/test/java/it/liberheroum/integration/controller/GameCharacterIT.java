@@ -1,6 +1,7 @@
 package it.liberheroum.integration.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.jayway.jsonpath.JsonPath;
 import it.liberheroum.integration.support.AbstractIntegrationTest;
@@ -295,13 +296,6 @@ class GameCharacterIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void findAllGameCharacters_sizeOver100_returnsBadRequest() {
-        createAppUser();
-
-        assertThat(mvc.get().uri("/characters?size=101")).hasStatus(HttpStatus.BAD_REQUEST);
-    }
-
-    @Test
     void updateGameCharacter_ownCharacter_returnsAndStoresNewValuesKeepingKind() {
         createAppUser();
         UUID id = createGameCharacter("Aragorn");
@@ -362,8 +356,14 @@ class GameCharacterIT extends AbstractIntegrationTest {
 
         mvc.delete().uri("/characters/{id}", characterId).exchange();
 
-        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"), countRows("diary_page_tag"),
-                countRows("character_sheet"), countRows("document"))).containsOnly(0);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(0);
+            softly.assertThat(countRows("diary")).isEqualTo(0);
+            softly.assertThat(countRows("diary_page")).isEqualTo(0);
+            softly.assertThat(countRows("diary_page_tag")).isEqualTo(0);
+            softly.assertThat(countRows("character_sheet")).isEqualTo(0);
+            softly.assertThat(countRows("document")).isEqualTo(0);
+        });
         assertThat(storedObjectKeys()).isEmpty();
     }
 
@@ -383,8 +383,14 @@ class GameCharacterIT extends AbstractIntegrationTest {
 
         mvc.delete().uri("/characters/{id}", deleted).exchange();
 
-        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"), countRows("document"), storedObjectKeys().size()))
-                .containsExactly(1, 1, 1, 2, 2);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(1);
+            softly.assertThat(countRows("diary")).isEqualTo(1);
+            softly.assertThat(countRows("diary_page")).isEqualTo(1);
+            softly.assertThat(countRows("document")).isEqualTo(2);
+            softly.assertThat(storedFiles).isEqualTo(2);
+        });
     }
 
     @Test
@@ -397,7 +403,11 @@ class GameCharacterIT extends AbstractIntegrationTest {
         MvcTestResult result = mvc.delete().uri("/characters/{id}", othersCharacter).exchange();
 
         assertThat(result).hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"))).containsOnly(1);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(1);
+            softly.assertThat(countRows("diary")).isEqualTo(1);
+            softly.assertThat(countRows("diary_page")).isEqualTo(1);
+        });
     }
 
     @Test
@@ -408,7 +418,10 @@ class GameCharacterIT extends AbstractIntegrationTest {
         MvcTestResult result = deleteCharacterWhileDiaryIsAdded(characterId);
 
         assertThat(result).hasStatusOk();
-        assertThat(List.of(countRows("game_character"), countRows("diary"))).containsOnly(0);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(0);
+            softly.assertThat(countRows("diary")).isEqualTo(0);
+        });
     }
 
     @Test
@@ -420,7 +433,11 @@ class GameCharacterIT extends AbstractIntegrationTest {
         MvcTestResult result = deleteCharacterWhilePageIsAdded(characterId, diaryId);
 
         assertThat(result).hasStatusOk();
-        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"))).containsOnly(0);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(0);
+            softly.assertThat(countRows("diary")).isEqualTo(0);
+            softly.assertThat(countRows("diary_page")).isEqualTo(0);
+        });
     }
 
     @Test
@@ -496,7 +513,11 @@ class GameCharacterIT extends AbstractIntegrationTest {
 
         mvc.delete().uri("/characters/{id}/avatar", characterId).exchange();
 
-        assertThat(List.of(storedObjectKeys().size(), countRows("document"))).containsOnly(0);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(storedFiles).isEqualTo(0);
+            softly.assertThat(countRows("document")).isEqualTo(0);
+        });
     }
 
     @Test

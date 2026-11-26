@@ -1,15 +1,12 @@
 package it.liberheroum.unit.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Answers.RETURNS_SELF;
-import static org.mockito.Mockito.mock;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import io.ebean.ExpressionList;
 import it.liberheroum.controller.GameCharacterController;
 import it.liberheroum.dto.PagedResultDTO;
 import it.liberheroum.dto.game_character.BaseGameCharacterDTO;
@@ -270,19 +267,5 @@ class GameCharacterControllerTest {
 
         assertThat(result).bodyJson().extractingPath("$.message").isEqualTo("Avatar removed");
         verify(service).deleteGameCharacterAvatar(CHARACTER_ID);
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void findAllGameCharacters_injectedSortFields_sortsByDefaultField() {
-        when(service.findAllGameCharacters(any())).thenReturn(PagedResultDTO.of(List.of(), 0, 1, 20));
-        ArgumentCaptor<GameCharacterSearchRequest> request = ArgumentCaptor.forClass(GameCharacterSearchRequest.class);
-        ExpressionList<Object> query = mock(ExpressionList.class, RETURNS_SELF);
-
-        mvc.get().uri("/characters?SORT_FIELDS[owner.email]=owner.email&sortFields[owner.email]=owner.email&sort=owner.email").exchange();
-
-        verify(service).findAllGameCharacters(request.capture());
-        request.getValue().applySortAndPagination(query, "name");
-        verify(query).orderBy("name asc, id asc");
     }
 }

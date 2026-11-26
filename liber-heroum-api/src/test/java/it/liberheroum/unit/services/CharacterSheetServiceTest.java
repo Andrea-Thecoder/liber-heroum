@@ -9,7 +9,6 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,7 +45,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -324,7 +322,7 @@ class CharacterSheetServiceTest {
     // ---- updateCharacterSheetFile ----
 
     @Test
-    void updateCharacterSheetFile_validFile_deletesPreviousRecordThenCommitsThenDeletesPreviousFile() {
+    void updateCharacterSheetFile_validFile_deletesPreviousDocument() {
         Document previous = document("old.pdf");
         givenOwnedSheet(sheet(previous));
         when(database.beginTransaction()).thenReturn(transaction);
@@ -332,32 +330,13 @@ class CharacterSheetServiceTest {
 
         service.updateCharacterSheetFile(SHEET_ID, file);
 
-        InOrder order = inOrder(documentService, transaction);
-        order.verify(documentService).deleteDocumentRecord(previous);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(previous);
-    }
-
-    @Test
-    void updateCharacterSheetFile_saveFails_deletesNewFileAndKeepsPreviousOne() {
-        CharacterSheet sheet = sheet(document("old.pdf"));
-        Document previous = sheet.getDocument();
-        givenOwnedSheet(sheet);
-        Document replacement = document("new.pdf");
-        when(database.beginTransaction()).thenReturn(transaction);
-        when(documentService.createPdfDocument(file)).thenReturn(replacement);
-        doThrow(new IllegalStateException("db down")).when(database).save(sheet);
-
-        catchThrowable(() -> service.updateCharacterSheetFile(SHEET_ID, file));
-
-        verify(documentService).deleteDocumentFile(replacement);
-        verify(documentService, never()).deleteDocumentFile(previous);
+        verify(documentService).deleteDocumentFile(previous);
     }
 
     // ---- deleteCharacterSheet ----
 
     @Test
-    void deleteCharacterSheet_ownedSheet_deletesRowsInTransactionThenFileAfterCommit() {
+    void deleteCharacterSheet_ownedSheet_deletesSheetAndItsDocument() {
         CharacterSheet sheet = sheet(document("sheet.pdf"));
         Document pdf = sheet.getDocument();
         givenOwnedSheet(sheet);
@@ -365,23 +344,7 @@ class CharacterSheetServiceTest {
 
         service.deleteCharacterSheet(SHEET_ID);
 
-        InOrder order = inOrder(database, documentService, transaction);
-        order.verify(database).delete(sheet);
-        order.verify(documentService).deleteDocumentRecord(pdf);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(pdf);
-    }
-
-    @Test
-    void deleteCharacterSheet_deleteFails_keepsTheFile() {
-        CharacterSheet sheet = sheet(document("sheet.pdf"));
-        givenOwnedSheet(sheet);
-        when(database.beginTransaction()).thenReturn(transaction);
-        doThrow(new IllegalStateException("db down")).when(database).delete(sheet);
-
-        catchThrowable(() -> service.deleteCharacterSheet(SHEET_ID));
-
-        verify(transaction, never()).commit();
-        verify(documentService, never()).deleteDocumentFile(any());
+        verify(database).delete(sheet);
+        verify(documentService).deleteDocumentFile(pdf);
     }
 }

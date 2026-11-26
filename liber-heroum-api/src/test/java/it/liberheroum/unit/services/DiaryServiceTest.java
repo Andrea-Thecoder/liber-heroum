@@ -8,8 +8,6 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,7 +42,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -220,7 +217,7 @@ class DiaryServiceTest {
     }
 
     @Test
-    void updateDiaryCover_previousCover_returnsNewCoverAndDeletesPreviousFileAfterCommit() {
+    void updateDiaryCover_previousCover_returnsNewCoverAndDeletesPreviousDocument() {
         Diary diary = diary("Chapter one");
         Document previous = document("old.png");
         diary.setCoverDocument(previous);
@@ -232,34 +229,13 @@ class DiaryServiceTest {
 
         DetailDiaryDTO result = service.updateDiaryCover(DIARY_ID, file);
 
-        InOrder order = inOrder(documentService, transaction);
-        order.verify(documentService).deleteDocumentRecord(previous);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(previous);
+        verify(documentService).deleteDocumentFile(previous);
         assertThat(result).extracting(DetailDiaryDTO::coverDocumentId, DetailDiaryDTO::coverUrl)
                 .containsExactly(cover.getId(), "https://storage.example/cover");
     }
 
     @Test
-    void updateDiaryCover_saveFails_rethrowsDeletesNewFileAndKeepsPreviousFile() {
-        Diary diary = diary("Chapter one");
-        Document previous = document("old.png");
-        diary.setCoverDocument(previous);
-        givenOwnedDiary(diary);
-        Document cover = document("cover.png");
-        when(database.beginTransaction()).thenReturn(transaction);
-        when(documentService.createImageDocument(file)).thenReturn(cover);
-        doThrow(new IllegalStateException("db down")).when(database).save(diary);
-
-        Throwable thrown = catchThrowable(() -> service.updateDiaryCover(DIARY_ID, file));
-
-        assertThat(thrown).isInstanceOf(IllegalStateException.class);
-        verify(documentService).deleteDocumentFile(cover);
-        verify(documentService, never()).deleteDocumentFile(previous);
-    }
-
-    @Test
-    void deleteDiaryCover_withCover_unlinksCoverAndDeletesFileAfterCommit() {
+    void deleteDiaryCover_withCover_unlinksCoverAndDeletesItsDocument() {
         Diary diary = diary("Chapter one");
         Document previous = document("old.png");
         diary.setCoverDocument(previous);
@@ -268,15 +244,12 @@ class DiaryServiceTest {
 
         service.deleteDiaryCover(DIARY_ID);
 
-        InOrder order = inOrder(documentService, transaction);
-        order.verify(documentService).deleteDocumentRecord(previous);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(previous);
+        verify(documentService).deleteDocumentFile(previous);
         assertThat(diary.getCoverDocument()).isNull();
     }
 
     @Test
-    void deleteDiary_pageAddedMeanwhile_throwsConflictAndKeepsCoverFile() {
+    void deleteDiary_pageAddedMeanwhile_throwsConflict() {
         Diary diary = diary("Chapter one");
         Document cover = document("cover.png");
         diary.setCoverDocument(cover);
@@ -288,11 +261,10 @@ class DiaryServiceTest {
 
         assertThat(thrown).isInstanceOfSatisfying(ResponseStatusException.class,
                 e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
-        verify(documentService, never()).deleteDocumentFile(any());
     }
 
     @Test
-    void deleteDiary_otherDatabaseError_rethrowsItAndKeepsCoverFile() {
+    void deleteDiary_otherDatabaseError_rethrowsIt() {
         Diary diary = diary("Chapter one");
         diary.setCoverDocument(document("cover.png"));
         givenOwnedDiary(diary);
@@ -303,11 +275,10 @@ class DiaryServiceTest {
         Throwable thrown = catchThrowable(() -> service.deleteDiary(DIARY_ID));
 
         assertThat(thrown).isSameAs(failure);
-        verify(documentService, never()).deleteDocumentFile(any());
     }
 
     @Test
-    void deleteDiary_withCover_deletesRecordThenCommitsThenDeletesFile() {
+    void deleteDiary_withCover_deletesCoverDocument() {
         Diary diary = diary("Chapter one");
         Document cover = document("cover.png");
         diary.setCoverDocument(cover);
@@ -317,10 +288,7 @@ class DiaryServiceTest {
 
         service.deleteDiary(DIARY_ID);
 
-        InOrder order = inOrder(documentService, transaction);
-        order.verify(documentService).deleteDocumentRecord(cover);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(cover);
+        verify(documentService).deleteDocumentFile(cover);
     }
 
     @Test

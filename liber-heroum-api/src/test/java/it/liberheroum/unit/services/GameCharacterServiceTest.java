@@ -4,10 +4,8 @@ import static it.liberheroum.unit.support.QueryStub.pagedList;
 import static it.liberheroum.unit.support.QueryStub.stubFind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,7 +41,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -195,7 +192,7 @@ class GameCharacterServiceTest {
     }
 
     @Test
-    void updateGameCharacterAvatar_previousAvatar_deletesRecordThenCommitsThenDeletesFile() {
+    void updateGameCharacterAvatar_previousAvatar_deletesPreviousDocument() {
         GameCharacter character = character("Aragorn");
         Document previous = document("old.png");
         character.setAvatarDocument(previous);
@@ -205,42 +202,11 @@ class GameCharacterServiceTest {
 
         service.updateGameCharacterAvatar(CHARACTER_ID, file);
 
-        InOrder order = inOrder(documentService, transaction);
-        order.verify(documentService).deleteDocumentRecord(previous);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(previous);
+        verify(documentService).deleteDocumentFile(previous);
     }
 
     @Test
-    void updateGameCharacterAvatar_saveFails_deletesNewFileAndKeepsPreviousFile() {
-        GameCharacter character = character("Aragorn");
-        Document previous = document("old.png");
-        character.setAvatarDocument(previous);
-        givenOwnedCharacter(character);
-        Document avatar = document("avatar.png");
-        when(database.beginTransaction()).thenReturn(transaction);
-        when(documentService.createImageDocument(file)).thenReturn(avatar);
-        doThrow(new IllegalStateException("db down")).when(database).save(character);
-
-        catchThrowable(() -> service.updateGameCharacterAvatar(CHARACTER_ID, file));
-
-        verify(documentService).deleteDocumentFile(avatar);
-        verify(documentService, never()).deleteDocumentFile(previous);
-    }
-
-    @Test
-    void updateGameCharacterAvatar_uploadFails_doesNotCommit() {
-        givenOwnedCharacter(character("Aragorn"));
-        when(database.beginTransaction()).thenReturn(transaction);
-        when(documentService.createImageDocument(file)).thenThrow(new IllegalStateException("storage down"));
-
-        catchThrowable(() -> service.updateGameCharacterAvatar(CHARACTER_ID, file));
-
-        verify(transaction, never()).commit();
-    }
-
-    @Test
-    void deleteGameCharacterAvatar_withAvatar_unlinksDeletesRecordThenCommitsThenDeletesFile() {
+    void deleteGameCharacterAvatar_withAvatar_unlinksAndDeletesItsDocument() {
         GameCharacter character = character("Aragorn");
         Document previous = document("old.png");
         character.setAvatarDocument(previous);
@@ -250,26 +216,11 @@ class GameCharacterServiceTest {
         service.deleteGameCharacterAvatar(CHARACTER_ID);
 
         assertThat(character.getAvatarDocument()).isNull();
-        InOrder order = inOrder(database, documentService, transaction);
-        order.verify(database).save(character);
-        order.verify(documentService).deleteDocumentRecord(previous);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(previous);
+        verify(documentService).deleteDocumentFile(previous);
     }
 
     @Test
-    void deleteGameCharacterAvatar_withoutAvatar_commitsAndDeletesNoFile() {
-        givenOwnedCharacter(character("Aragorn"));
-        when(database.beginTransaction()).thenReturn(transaction);
-
-        service.deleteGameCharacterAvatar(CHARACTER_ID);
-
-        verify(transaction).commit();
-        verify(documentService, never()).deleteDocumentFile(any(Document.class));
-    }
-
-    @Test
-    void deleteGameCharacter_avatarAndCovers_deletesRecordsBeforeCommitAndFilesAfter() {
+    void deleteGameCharacter_avatarAndCovers_deletesEveryDocument() {
         GameCharacter character = character("Aragorn");
         Document avatar = document("avatar.png");
         Document cover = document("cover.png");
@@ -282,27 +233,8 @@ class GameCharacterServiceTest {
 
         service.deleteGameCharacter(CHARACTER_ID);
 
-        InOrder order = inOrder(documentService, transaction);
-        order.verify(documentService).deleteDocumentRecord(avatar);
-        order.verify(documentService).deleteDocumentRecord(cover);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(avatar);
-        order.verify(documentService).deleteDocumentFile(cover);
-    }
-
-    @Test
-    void deleteGameCharacter_deleteFails_doesNotDeleteFiles() {
-        GameCharacter character = character("Aragorn");
-        character.setAvatarDocument(document("avatar.png"));
-        givenOwnedCharacter(character);
-        givenSheets();
-        givenDiaries(List.of());
-        when(database.beginTransaction()).thenReturn(transaction);
-        doThrow(new IllegalStateException("db down")).when(database).delete(character);
-
-        catchThrowable(() -> service.deleteGameCharacter(CHARACTER_ID));
-
-        verify(documentService, never()).deleteDocumentFile(any());
+        verify(documentService).deleteDocumentFile(avatar);
+        verify(documentService).deleteDocumentFile(cover);
     }
 
     @Test

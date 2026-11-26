@@ -1,6 +1,7 @@
 package it.liberheroum.unit.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import it.liberheroum.services.RichTextPdfRenderer;
 import java.io.IOException;
@@ -167,8 +168,10 @@ class RichTextPdfRendererTest {
             stripper.setStartPage(2);
             stripper.setEndPage(2);
             String secondSheet = stripper.getText(document);
-            assertThat(List.of(document.getNumberOfPages(), secondSheet.contains("Pagina 2"), secondSheet.contains("Seconda"),
-                    secondSheet.contains("Prima"))).containsExactly(3, true, true, false);
+            assertSoftly(softly -> {
+                softly.assertThat(document.getNumberOfPages()).isEqualTo(3);
+                softly.assertThat(secondSheet).contains("Pagina 2", "Seconda").doesNotContain("Prima");
+            });
         }
     }
 

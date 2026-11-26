@@ -1,6 +1,7 @@
 package it.liberheroum.integration.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.jayway.jsonpath.JsonPath;
@@ -440,7 +441,10 @@ class DiaryPageIT extends AbstractIntegrationTest {
 
         assertThat(storedPages(diaryId)).extracting(page -> page[0], page -> page[1])
                 .containsExactly(tuple(pages.get(0), (short) 1), tuple(pages.get(2), (short) 2), tuple(pages.get(3), (short) 3));
-        assertThat(List.of(storedText(pages.get(2)), storedText(pages.get(3)))).containsExactly("Page 3", "Page 4");
+        assertSoftly(softly -> {
+            softly.assertThat(storedText(pages.get(2))).isEqualTo("Page 3");
+            softly.assertThat(storedText(pages.get(3))).isEqualTo("Page 4");
+        });
         assertThat(storedVersions(pages.subList(2, 4))).containsExactly(followingVersions.get(0) + 1, followingVersions.get(1) + 1);
         assertThat(storedVersion(pages.get(0))).isEqualTo(firstVersion);
     }

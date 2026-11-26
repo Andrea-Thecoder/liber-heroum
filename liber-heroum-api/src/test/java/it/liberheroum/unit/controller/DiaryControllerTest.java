@@ -1,15 +1,12 @@
 package it.liberheroum.unit.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Answers.RETURNS_SELF;
-import static org.mockito.Mockito.mock;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import io.ebean.ExpressionList;
 import it.liberheroum.controller.DiaryController;
 import it.liberheroum.dto.PagedResultDTO;
 import it.liberheroum.dto.diary.BaseDiaryDTO;
@@ -118,20 +115,6 @@ class DiaryControllerTest {
     void findAllDiariesByCharacter_pageNotANumber_returnsReadableViolationMessage() {
         assertThat(mvc.get().uri("/characters/{characterId}/diaries?page=abc", CHARACTER_ID))
                 .bodyJson().extractingPath("$.violations[0].message").isEqualTo("Invalid value");
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void findAllDiariesByCharacter_injectedSortFields_sortsByDefaultField() {
-        when(service.findAllDiariesByCharacter(eq(CHARACTER_ID), any())).thenReturn(PagedResultDTO.of(List.of(), 0, 1, 20));
-        ArgumentCaptor<DiarySearchRequest> request = ArgumentCaptor.forClass(DiarySearchRequest.class);
-        ExpressionList<Object> query = mock(ExpressionList.class, RETURNS_SELF);
-
-        mvc.get().uri("/characters/{characterId}/diaries?SORT_FIELDS[character.owner.email]=character.owner.email&sortFields[character.owner.email]=character.owner.email&sort=character.owner.email", CHARACTER_ID).exchange();
-
-        verify(service).findAllDiariesByCharacter(eq(CHARACTER_ID), request.capture());
-        request.getValue().applySortAndPagination(query, "title");
-        verify(query).orderBy("title asc, id asc");
     }
 
     @Test

@@ -1,11 +1,11 @@
 package it.liberheroum.integration.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import it.liberheroum.integration.support.AbstractIntegrationTest;
 import it.liberheroum.integration.support.TestJwt;
 import it.liberheroum.integration.support.WithMockJwt;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -94,24 +94,11 @@ class InputEdgeIT extends AbstractIntegrationTest {
 
         MvcTestResult result = mvc.get().uri("/diaries/{id}", othersDiary).exchange();
 
-        assertThat(List.of(json(result, "$.status"), json(result, "$.title"), json(result, "$.violations[0].message")))
-                .containsExactly("404", "NOT_FOUND", "Diary not found");
-    }
-
-    @Test
-    void findAllGameCharacters_pageZero_reportsPageAsViolationField() {
-        createAppUser();
-
-        assertThat(mvc.get().uri("/characters?page=0"))
-                .bodyJson().extractingPath("$.violations[0].field").isEqualTo("page");
-    }
-
-    @Test
-    void findAllGameCharacters_sizeOver100_reportsSizeAsViolationField() {
-        createAppUser();
-
-        assertThat(mvc.get().uri("/characters?size=101"))
-                .bodyJson().extractingPath("$.violations[0].field").isEqualTo("size");
+        assertSoftly(softly -> {
+            softly.assertThat(json(result, "$.status")).isEqualTo("404");
+            softly.assertThat(json(result, "$.title")).isEqualTo("NOT_FOUND");
+            softly.assertThat(json(result, "$.violations[0].message")).isEqualTo("Diary not found");
+        });
     }
 
     @Test

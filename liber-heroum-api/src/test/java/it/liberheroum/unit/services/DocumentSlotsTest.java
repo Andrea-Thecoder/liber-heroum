@@ -15,7 +15,9 @@ import it.liberheroum.model.Diary;
 import it.liberheroum.model.Document;
 import it.liberheroum.services.DocumentService;
 import it.liberheroum.services.DocumentSlots;
+import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +34,12 @@ class DocumentSlotsTest {
     private DocumentService documentService;
     @Mock
     private Transaction transaction;
+    @Mock
+    private Runnable lock;
+    @Mock
+    private Supplier<List<Document>> findDocuments;
+    @Mock
+    private Runnable delete;
 
     private DocumentSlots slots;
 
@@ -108,6 +116,16 @@ class DocumentSlotsTest {
     }
 
     @Test
+    void clear_withoutDocument_savesOwnerAndCommits() {
+        Diary owner = new Diary();
+
+        slots.clear(owner, null, owner::setCoverDocument);
+
+        verify(database).save(owner);
+        verify(transaction).commit();
+    }
+
+    @Test
     void clear_saveFails_rethrowsAndKeepsFile() {
         Document previous = document();
         Diary owner = new Diary();
@@ -118,6 +136,37 @@ class DocumentSlotsTest {
         assertThat(thrown).isInstanceOf(IllegalStateException.class);
         verify(transaction, never()).commit();
         verify(documentService, never()).deleteDocumentFile(previous);
+    }
+
+    @Test
+    void deleteWithDocuments_documentsFound_locksDeletesRecordsBeforeCommitAndFilesAfterIt() {
+        Document avatar = document();
+        Document cover = document();
+        when(findDocuments.get()).thenReturn(List.of(avatar, cover));
+
+        slots.deleteWithDocuments(lock, findDocuments, delete);
+
+        InOrder order = inOrder(lock, findDocuments, delete, documentService, transaction);
+        order.verify(lock).run();
+        order.verify(findDocuments).get();
+        order.verify(delete).run();
+        order.verify(documentService).deleteDocumentRecord(avatar);
+        order.verify(documentService).deleteDocumentRecord(cover);
+        order.verify(transaction).commit();
+        order.verify(documentService).deleteDocumentFile(avatar);
+        order.verify(documentService).deleteDocumentFile(cover);
+    }
+
+    @Test
+    void deleteWithDocuments_deleteFails_rethrowsAndKeepsFiles() {
+        when(findDocuments.get()).thenReturn(List.of(document()));
+        doThrow(new IllegalStateException("db down")).when(delete).run();
+
+        Throwable thrown = catchThrowable(() -> slots.deleteWithDocuments(lock, findDocuments, delete));
+
+        assertThat(thrown).isInstanceOf(IllegalStateException.class);
+        verify(transaction, never()).commit();
+        verify(documentService, never()).deleteDocumentFile(any());
     }
 
     private static Document document() {

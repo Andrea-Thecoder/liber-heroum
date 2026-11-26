@@ -1,10 +1,12 @@
 package it.liberheroum.integration.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import it.liberheroum.integration.support.AbstractIntegrationTest;
 import it.liberheroum.integration.support.BlockingTransaction;
 import it.liberheroum.integration.support.TestJwt;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -13,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -27,21 +28,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 class FeedbackIT extends AbstractIntegrationTest {
 
-    private static final AtomicInteger ADDRESSES = new AtomicInteger();
     private static final RequestPostProcessor ADMIN = TestJwt.as(TestJwt.OTHER_SUBJECT, TestJwt.OTHER_EMAIL, "admin");
     private static final RequestPostProcessor USER = TestJwt.as(TestJwt.USER_SUBJECT, TestJwt.USER_EMAIL, "user");
-    private static final String TODAY = LocalDate.now(ZoneId.of("Europe/Rome")).toString();
-    private static final String YESTERDAY = LocalDate.now(ZoneId.of("Europe/Rome")).minusDays(1).toString();
-
-    private static RequestPostProcessor newAddress() {
-        int number = ADDRESSES.incrementAndGet();
-        String address = "10.%d.%d.%d".formatted((number >> 16) & 255, (number >> 8) & 255, number & 255);
-        return request -> {
-            request.setRemoteAddr(address);
-            request.setServletPath(request.getRequestURI());
-            return request;
-        };
-    }
 
     private static MockMultipartFile image(String name) {
         return new MockMultipartFile("files", name, MediaType.IMAGE_PNG_VALUE, PNG);
@@ -51,8 +39,8 @@ class FeedbackIT extends AbstractIntegrationTest {
         return new MockMultipartFile("files", name, MediaType.IMAGE_PNG_VALUE, Arrays.copyOf(PNG, size));
     }
 
-    private MockMultipartMvcRequestBuilder form(RequestPostProcessor address, String type, String message, MockMultipartFile... files) {
-        MockMultipartMvcRequestBuilder request = mvc.post().uri("/feedback").multipart().with(address)
+    private MockMultipartMvcRequestBuilder form(String type, String message, MockMultipartFile... files) {
+        MockMultipartMvcRequestBuilder request = mvc.post().uri("/feedback").multipart()
                 .param("type", type)
                 .param("message", message)
                 .param("email", "alira@example.com")
@@ -62,16 +50,21 @@ class FeedbackIT extends AbstractIntegrationTest {
     }
 
     private MockMultipartMvcRequestBuilder form(MockMultipartFile... files) {
-        return form(newAddress(), "idea", "Great tags", files);
+        return form("idea", "Great tags", files);
     }
 
     private UUID sendFeedback(String type, String message, MockMultipartFile... files) {
-        form(newAddress(), type, message, files).exchange();
+        form(type, message, files).exchange();
         return jdbc.queryForObject("select id from feedback where message = ?", UUID.class, message);
     }
 
     private UUID sendFeedback(MockMultipartFile... files) {
         return sendFeedback("idea", "Great tags", files);
+    }
+
+    private LocalDate createdDay(UUID id) {
+        return jdbc.queryForObject("select created_at from feedback where id = ?", Timestamp.class, id)
+                .toInstant().atZone(ZoneId.of("Europe/Rome")).toLocalDate();
     }
 
     private String storedStatus(UUID id) {
@@ -82,7 +75,7 @@ class FeedbackIT extends AbstractIntegrationTest {
 
     @Test
     void createFeedback_noToken_savesNewAnonymousFeedbackWithUpperCaseType() {
-        MvcTestResult result = form(newAddress(), "bug", "The page does not turn").exchange();
+        MvcTestResult result = form("bug", "The page does not turn").exchange();
 
         assertThat(result).hasStatus(HttpStatus.CREATED).bodyJson().extractingPath("$.message").isEqualTo("Feedback received");
         assertThat(jdbc.queryForMap("select type, status, email, privacy_accepted, created_by from feedback where message = ?",
@@ -101,7 +94,7 @@ class FeedbackIT extends AbstractIntegrationTest {
 
     @Test
     void createFeedback_technicalInfo_storesItAsJson() {
-        form(newAddress(), "bug", "With info").param("technicalInfo", "{\"browser\":\"Firefox 130\"}").exchange();
+        form("bug", "With info").param("technicalInfo", "{\"browser\":\"Firefox 130\"}").exchange();
 
         assertThat(jdbc.queryForObject("select technical_info ->> 'browser' from feedback where message = 'With info'", String.class))
                 .isEqualTo("Firefox 130");
@@ -127,7 +120,7 @@ class FeedbackIT extends AbstractIntegrationTest {
 
     @Test
     void createFeedback_consentMissing_returnsBadRequestOnConsentAndSavesNothing() {
-        MvcTestResult result = mvc.post().uri("/feedback").multipart().with(newAddress())
+        MvcTestResult result = mvc.post().uri("/feedback").multipart()
                 .param("type", "idea").param("message", "Hi").param("email", "alira@example.com").exchange();
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).bodyJson().extractingPath("$.violations[0].field").isEqualTo("consent");
@@ -205,7 +198,7 @@ class FeedbackIT extends AbstractIntegrationTest {
 
     @Test
     void createFeedback_jsonBody_isRejected() {
-        MvcTestResult result = mvc.post().uri("/feedback").with(newAddress())
+        MvcTestResult result = mvc.post().uri("/feedback")
                 .contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"idea\"}").exchange();
 
         assertThat(result).hasStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
@@ -267,7 +260,7 @@ class FeedbackIT extends AbstractIntegrationTest {
     @Test
     void findAllFeedbacks_admin_listsAllFeedbackOfAnyone() {
         sendFeedback("idea", "First");
-        form(newAddress(), "bug", "Second").with(USER).exchange();
+        form("bug", "Second").with(USER).exchange();
 
         assertThat(mvc.get().uri("/feedback").with(ADMIN)).bodyJson().extractingPath("$.totalRows").isEqualTo(2);
     }
@@ -310,17 +303,17 @@ class FeedbackIT extends AbstractIntegrationTest {
 
     @Test
     void findAllFeedbacks_createdTodayRange_includesTodayFeedback() {
-        sendFeedback();
+        LocalDate day = createdDay(sendFeedback());
 
-        assertThat(mvc.get().uri("/feedback?createdFrom={from}&createdTo={to}", TODAY, TODAY).with(ADMIN))
+        assertThat(mvc.get().uri("/feedback?createdFrom={from}&createdTo={to}", day, day).with(ADMIN))
                 .bodyJson().extractingPath("$.totalRows").isEqualTo(1);
     }
 
     @Test
     void findAllFeedbacks_createdToYesterday_excludesTodayFeedback() {
-        sendFeedback();
+        LocalDate dayBefore = createdDay(sendFeedback()).minusDays(1);
 
-        assertThat(mvc.get().uri("/feedback?createdTo={to}", YESTERDAY).with(ADMIN)).bodyJson().extractingPath("$.totalRows").isEqualTo(0);
+        assertThat(mvc.get().uri("/feedback?createdTo={to}", dayBefore).with(ADMIN)).bodyJson().extractingPath("$.totalRows").isEqualTo(0);
     }
 
     @Test
@@ -371,7 +364,10 @@ class FeedbackIT extends AbstractIntegrationTest {
 
         MvcTestResult result = mvc.patch().uri("/feedback/{id}/" + action, id).with(ADMIN).exchange();
 
-        assertThat(List.of(json(result, "$.status"), storedStatus(id))).containsExactly(status, status);
+        assertSoftly(softly -> {
+            softly.assertThat(json(result, "$.status")).isEqualTo(status);
+            softly.assertThat(storedStatus(id)).isEqualTo(status);
+        });
     }
 
     @Test

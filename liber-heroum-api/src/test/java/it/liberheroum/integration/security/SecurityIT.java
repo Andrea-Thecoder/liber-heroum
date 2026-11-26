@@ -342,10 +342,6 @@ class SecurityIT extends AbstractIntegrationTest {
     @Test
     void createFeedback_noToken_returnsCreated() {
         assertThat(mvc.post().uri("/feedback").multipart()
-                .with(request -> {
-                    request.setRemoteAddr("192.0.2.77");
-                    return request;
-                })
                 .param("type", "idea").param("message", "Great tags").param("email", "alira@example.com").param("consent", "true"))
                 .hasStatus(HttpStatus.CREATED);
     }
