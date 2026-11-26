@@ -107,9 +107,9 @@ describe('sheet editor with a fillable PDF', () => {
 		expect(saved.name).toBe('alira-lv5.pdf');
 		expect(saved.type).toBe('application/pdf');
 
-		const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+		const pdfjs = await import('pdfjs-dist');
 		pdfjs.GlobalWorkerOptions.workerSrc = (
-			await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')
+			await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
 		).default;
 		const reopened = await pdfjs.getDocument({ data: new Uint8Array(await saved.arrayBuffer()) })
 			.promise;
