@@ -15,7 +15,7 @@ import it.liberheroum.model.GameCharacter;
 import it.liberheroum.model.GameCharacterKind;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.services.RichTextPdfRenderer;
-import it.liberheroum.services.OwnedResources;
+import it.liberheroum.services.ResourceAccessGuard;
 import it.liberheroum.services.CharacterBackgroundPdfService;
 import it.liberheroum.unit.support.QueryStub;
 import java.util.List;
@@ -48,7 +48,7 @@ class CharacterBackgroundPdfServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CharacterBackgroundPdfService(database, jwtInspector, renderer, new OwnedResources(database, jwtInspector));
+        service = new CharacterBackgroundPdfService(database, jwtInspector, renderer, new ResourceAccessGuard(database, jwtInspector));
     }
 
     private GameCharacter character(String name, String campaign, GameCharacterKind kind) {

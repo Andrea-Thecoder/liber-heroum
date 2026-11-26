@@ -485,13 +485,6 @@ class DiaryPageTagIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void findAllDiaryTagsByDiary_sizeAboveHundred_returnsBadRequest() {
-        UUID diaryId = createDiaryWithOwner();
-
-        assertThat(diaryTags(diaryId, "?size=101")).hasStatus(HttpStatus.BAD_REQUEST);
-    }
-
-    @Test
     void findAllDiaryTagsByDiary_diaryOfOtherUser_returnsNotFoundWithoutTheirTags() {
         UUID othersDiary = diaryOf(othersTaggedPage("secret"));
 

@@ -1,6 +1,7 @@
 package it.liberheroum.integration.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.jayway.jsonpath.JsonPath;
 import it.liberheroum.integration.support.AbstractIntegrationTest;
@@ -65,7 +66,7 @@ class UserExportIT extends AbstractIntegrationTest {
     }
 
     private AppUser appUser(String subject) {
-        return database.find(AppUser.class).where().eq("keycloakId", subject).findOne();
+        return database.find(AppUser.class).where().eq("subject", subject).findOne();
     }
 
     private void savePayment(AppUser owner, String description) {
@@ -127,22 +128,13 @@ class UserExportIT extends AbstractIntegrationTest {
                     .contains("Chapter one", "Pagina 1", "Page one of Alira dei Salici", "Pagina 2", "Page two of Alira dei Salici");
             softly.assertThat(csv).contains("Premium annual;29,90;EUR;Pagato").doesNotContain("Their payment");
             softly.assertThat(new String(entries.get("LEGGIMI.txt"), StandardCharsets.UTF_8)).contains(TestJwt.USER_EMAIL);
-            softly.assertThat(List.<Object>of(
-                    JsonPath.read(data, "$.account"),
-                    JsonPath.read(data, "$.characters[*].name"),
-                    JsonPath.read(data, "$.characters[0].storyFile"),
-                    JsonPath.read(data, "$.characters[0].background.content[0].content[0].text"),
-                    JsonPath.read(data, "$.characters[0].diaries[0].pdfFile"),
-                    JsonPath.read(data, "$.characters[0].diaries[0].pages[*].content.content[0].content[0].text"),
-                    JsonPath.read(data, "$.payments[*].description")))
-                    .containsExactly(
-                            Map.of("email", TestJwt.USER_EMAIL),
-                            List.of("Alira dei Salici"),
-                            folder + "storia.pdf",
-                            "Born in the woods of Alira dei Salici",
-                            folder + "diari/01-chapter-one.pdf",
-                            List.of("Page one of Alira dei Salici", "Page two of Alira dei Salici"),
-                            List.of("Premium annual"));
+            softly.assertThat((Object) JsonPath.read(data, "$.account")).isEqualTo(Map.of("email", TestJwt.USER_EMAIL));
+            softly.assertThat((Object) JsonPath.read(data, "$.characters[*].name")).isEqualTo(List.of("Alira dei Salici"));
+            softly.assertThat((Object) JsonPath.read(data, "$.characters[0].storyFile")).isEqualTo(folder + "storia.pdf");
+            softly.assertThat((Object) JsonPath.read(data, "$.characters[0].background.content[0].content[0].text")).isEqualTo("Born in the woods of Alira dei Salici");
+            softly.assertThat((Object) JsonPath.read(data, "$.characters[0].diaries[0].pdfFile")).isEqualTo(folder + "diari/01-chapter-one.pdf");
+            softly.assertThat((Object) JsonPath.read(data, "$.characters[0].diaries[0].pages[*].content.content[0].content[0].text")).isEqualTo(List.of("Page one of Alira dei Salici", "Page two of Alira dei Salici"));
+            softly.assertThat((Object) JsonPath.read(data, "$.payments[*].description")).isEqualTo(List.of("Premium annual"));
             softly.assertThat(data).doesNotContain("Sam", "Their payment", "settings");
         });
     }
@@ -170,8 +162,11 @@ class UserExportIT extends AbstractIntegrationTest {
         Map<String, byte[]> entries = unzip(export());
 
         String diaryPdf = "personaggi/01-the-master/diari/01-session-notes.pdf";
-        assertThat(List.<Object>of(entries.keySet(), pdfText(entries.get(diaryPdf)).contains("Questo diario non ha ancora pagine.")))
-                .containsExactly(Set.of("LEGGIMI.txt", diaryPdf, "pagamenti.csv", "per-altri-programmi/dati.json"), true);
+        String diaryText = pdfText(entries.get(diaryPdf));
+        assertSoftly(softly -> {
+            softly.assertThat(entries.keySet()).isEqualTo(Set.of("LEGGIMI.txt", diaryPdf, "pagamenti.csv", "per-altri-programmi/dati.json"));
+            softly.assertThat(diaryText).contains("Questo diario non ha ancora pagine.");
+        });
     }
 
     @Test
@@ -181,11 +176,14 @@ class UserExportIT extends AbstractIntegrationTest {
         MvcTestResult result = export();
 
         Map<String, byte[]> entries = unzip(result);
+        LocalDate exportDay = Instant.parse(JsonPath.read(data(entries), "$.exportedAt")).atZone(ZoneOffset.UTC).toLocalDate();
         assertThat(result).hasStatusOk().hasContentType("application/zip").headers().hasValue(HttpHeaders.CONTENT_DISPOSITION,
-                "attachment; filename=\"liber-heroum-" + LocalDate.now(ZoneOffset.UTC) + ".zip\"; filename*=UTF-8''liber-heroum-"
-                        + LocalDate.now(ZoneOffset.UTC) + ".zip");
-        assertThat(List.<Object>of(entries.keySet(), JsonPath.read(data(entries), "$.characters"), JsonPath.read(data(entries), "$.payments")))
-                .containsExactly(Set.of("LEGGIMI.txt", "pagamenti.csv", "per-altri-programmi/dati.json"), List.of(), List.of());
+                "attachment; filename=\"liber-heroum-" + exportDay + ".zip\"; filename*=UTF-8''liber-heroum-" + exportDay + ".zip");
+        assertSoftly(softly -> {
+            softly.assertThat(entries.keySet()).isEqualTo(Set.of("LEGGIMI.txt", "pagamenti.csv", "per-altri-programmi/dati.json"));
+            softly.assertThat((Object) JsonPath.read(data(entries), "$.characters")).isEqualTo(List.of());
+            softly.assertThat((Object) JsonPath.read(data(entries), "$.payments")).isEqualTo(List.of());
+        });
     }
 
     @Test

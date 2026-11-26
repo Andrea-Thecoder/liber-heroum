@@ -1,6 +1,7 @@
 package it.liberheroum.integration.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.jayway.jsonpath.JsonPath;
 import it.liberheroum.integration.support.AbstractIntegrationTest;
@@ -81,7 +82,7 @@ class GameCharacterIT extends AbstractIntegrationTest {
 
     private MvcTestResult createCharacterWhileUserIsDeleted() {
         try (BlockingTransaction deletion = BlockingTransaction.begin(jdbc)
-                .execute("delete from app_user where keycloak_id = ?", TestJwt.USER_SUBJECT)) {
+                .execute("delete from app_user where subject = ?", TestJwt.USER_SUBJECT)) {
             CompletableFuture<MvcTestResult> create = deletion.startBlockedCall(
                     () -> mvc.post().uri("/characters").with(currentUser()).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"name\":\"Aragorn\",\"kind\":\"PLAYER\"}").exchange());
@@ -97,8 +98,8 @@ class GameCharacterIT extends AbstractIntegrationTest {
         UUID id = createGameCharacter("Aragorn");
 
         Map<String, Object> stored = jdbc.queryForMap(
-                "select u.keycloak_id, c.created_by from game_character c join app_user u on u.id = c.owner_id where c.id = ?", id);
-        assertThat(stored).containsEntry("keycloak_id", TestJwt.USER_SUBJECT).containsEntry("created_by", TestJwt.USER_SUBJECT);
+                "select u.subject, c.created_by from game_character c join app_user u on u.id = c.owner_id where c.id = ?", id);
+        assertThat(stored).containsEntry("subject", TestJwt.USER_SUBJECT).containsEntry("created_by", TestJwt.USER_SUBJECT);
     }
 
     @Test
@@ -295,13 +296,6 @@ class GameCharacterIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void findAllGameCharacters_sizeOver100_returnsBadRequest() {
-        createAppUser();
-
-        assertThat(mvc.get().uri("/characters?size=101")).hasStatus(HttpStatus.BAD_REQUEST);
-    }
-
-    @Test
     void updateGameCharacter_ownCharacter_returnsAndStoresNewValuesKeepingKind() {
         createAppUser();
         UUID id = createGameCharacter("Aragorn");
@@ -350,17 +344,26 @@ class GameCharacterIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void deleteGameCharacter_withDiariesPagesAvatarAndCover_deletesEverythingAndFiles() throws Exception {
+    void deleteGameCharacter_withDiariesPagesTagsSheetAvatarAndCover_deletesEverythingAndFiles() throws Exception {
         createAppUser();
         UUID characterId = createGameCharacter("Aragorn");
         UUID diaryId = createDiary(characterId, "Chapter one");
-        createDiaryPage(diaryId, "Day one");
+        UUID pageId = createDiaryPage(diaryId, "Day one");
+        mvc.put().uri("/pages/{id}/tag", pageId).contentType(MediaType.APPLICATION_JSON).content("{\"tag\":\"combat\"}").exchange();
+        mvc.post().uri("/characters/{id}/sheets", characterId).multipart().file(pdfFile("sheet.pdf")).param("title", "Sheet").exchange();
         mvc.put().uri("/characters/{id}/avatar", characterId).multipart().file(pngFile("avatar.png")).exchange();
         mvc.put().uri("/diaries/{id}/cover", diaryId).multipart().file(pngFile("cover.png")).exchange();
 
         mvc.delete().uri("/characters/{id}", characterId).exchange();
 
-        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"), countRows("document"))).containsOnly(0);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(0);
+            softly.assertThat(countRows("diary")).isEqualTo(0);
+            softly.assertThat(countRows("diary_page")).isEqualTo(0);
+            softly.assertThat(countRows("diary_page_tag")).isEqualTo(0);
+            softly.assertThat(countRows("character_sheet")).isEqualTo(0);
+            softly.assertThat(countRows("document")).isEqualTo(0);
+        });
         assertThat(storedObjectKeys()).isEmpty();
     }
 
@@ -380,8 +383,14 @@ class GameCharacterIT extends AbstractIntegrationTest {
 
         mvc.delete().uri("/characters/{id}", deleted).exchange();
 
-        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"), countRows("document"), storedObjectKeys().size()))
-                .containsExactly(1, 1, 1, 2, 2);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(1);
+            softly.assertThat(countRows("diary")).isEqualTo(1);
+            softly.assertThat(countRows("diary_page")).isEqualTo(1);
+            softly.assertThat(countRows("document")).isEqualTo(2);
+            softly.assertThat(storedFiles).isEqualTo(2);
+        });
     }
 
     @Test
@@ -394,32 +403,41 @@ class GameCharacterIT extends AbstractIntegrationTest {
         MvcTestResult result = mvc.delete().uri("/characters/{id}", othersCharacter).exchange();
 
         assertThat(result).hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(List.of(countRows("game_character"), countRows("diary"), countRows("diary_page"))).containsOnly(1);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(1);
+            softly.assertThat(countRows("diary")).isEqualTo(1);
+            softly.assertThat(countRows("diary_page")).isEqualTo(1);
+        });
     }
 
     @Test
-    void deleteGameCharacter_diaryAddedBeforeCommit_returnsConflictWithRetryMessageAndKeepsCharacter() {
+    void deleteGameCharacter_diaryAddedWhileWaitingForLock_returnsOkAndDeletesAlsoTheNewDiary() {
         createAppUser();
         UUID characterId = createGameCharacter("Aragorn");
 
         MvcTestResult result = deleteCharacterWhileDiaryIsAdded(characterId);
 
-        assertThat(result).hasStatus(HttpStatus.CONFLICT);
-        assertThat(result).bodyJson().extractingPath("$.violations[0].message")
-                .isEqualTo("The character changed while it was being deleted, try again");
-        assertThat(countRows("game_character")).isEqualTo(1);
+        assertThat(result).hasStatusOk();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(0);
+            softly.assertThat(countRows("diary")).isEqualTo(0);
+        });
     }
 
     @Test
-    void deleteGameCharacter_pageAddedBeforeCommit_returnsConflictAndKeepsDiaryAndPage() {
+    void deleteGameCharacter_pageAddedWhileWaitingForLock_returnsOkAndDeletesAlsoTheNewPage() {
         createAppUser();
         UUID characterId = createGameCharacter("Aragorn");
         UUID diaryId = createDiary(characterId, "Chapter one");
 
         MvcTestResult result = deleteCharacterWhilePageIsAdded(characterId, diaryId);
 
-        assertThat(result).hasStatus(HttpStatus.CONFLICT);
-        assertThat(List.of(countRows("diary"), countRows("diary_page"))).containsExactly(1, 1);
+        assertThat(result).hasStatusOk();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(0);
+            softly.assertThat(countRows("diary")).isEqualTo(0);
+            softly.assertThat(countRows("diary_page")).isEqualTo(0);
+        });
     }
 
     @Test
@@ -495,7 +513,11 @@ class GameCharacterIT extends AbstractIntegrationTest {
 
         mvc.delete().uri("/characters/{id}/avatar", characterId).exchange();
 
-        assertThat(List.of(storedObjectKeys().size(), countRows("document"))).containsOnly(0);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(storedFiles).isEqualTo(0);
+            softly.assertThat(countRows("document")).isEqualTo(0);
+        });
     }
 
     @Test

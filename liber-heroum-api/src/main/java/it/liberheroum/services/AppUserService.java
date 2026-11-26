@@ -2,7 +2,6 @@ package it.liberheroum.services;
 
 import io.ebean.Database;
 import io.ebean.DuplicateKeyException;
-import io.ebean.Transaction;
 import it.liberheroum.config.AppUserConfig;
 import it.liberheroum.dto.app_user.DetailAppUserDTO;
 import it.liberheroum.dto.app_user.UpdateSettingsAppUserDTO;
@@ -10,11 +9,8 @@ import it.liberheroum.validation.StorableText;
 import it.liberheroum.exception.ServiceException;
 import it.liberheroum.exception.SqlStates;
 import it.liberheroum.model.AppUser;
-import it.liberheroum.model.CharacterSheet;
-import it.liberheroum.model.Diary;
-import it.liberheroum.model.DiaryPage;
 import it.liberheroum.model.Document;
-import it.liberheroum.model.GameCharacter;
+import it.liberheroum.security.IdentityProviderAdmin;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.security.RecentAuthentication;
 import jakarta.persistence.PersistenceException;
@@ -26,10 +22,8 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -45,125 +39,64 @@ public class AppUserService {
     private final AppUserConfig config;
     private final DocumentService documentService;
     private final RecentAuthentication recentAuthentication;
-    private final DiaryPageTagService tagService;
-    private final KeycloakUserService keycloakUserService;
+    private final IdentityProviderAdmin identityProviderAdmin;
+    private final DocumentSlots documentSlots;
+    private final PessimisticLocks pessimisticLocks;
+    private final ResourceAccessGuard accessGuard;
 
     public UUID createAppUser() {
-        String keycloakId = jwtInspector.getSubject();
+        String subject = jwtInspector.getSubject();
         String email = jwtInspector.getEmail();
         if (StringUtils.isBlank(email)) {
             throw new ServiceException("The token has no email address");
         }
-        AppUser user = findAppUserByKeycloakId(keycloakId)
+        AppUser user = findAppUserBySubject(subject)
                 .map(existing -> updateAppUserEmail(existing, email))
-                .orElseGet(() -> insertAppUser(keycloakId, email));
+                .orElseGet(() -> insertAppUser(subject, email));
         return user.getId();
     }
 
     public DetailAppUserDTO getAppUserBySubject() {
-        AppUser user = findAppUserOrThrow();
+        AppUser user = accessGuard.getCurrentAppUser();
         return DetailAppUserDTO.from(user, documentService.getDocumentUrl(user.getAvatarDocument()));
     }
 
     public String updateAppUserAvatar(MultipartFile file) {
-        AppUser user = findAppUserOrThrow();
-        Document previous = user.getAvatarDocument();
-        Document avatar = null;
-        try (Transaction transaction = database.beginTransaction()) {
-            avatar = documentService.createImageDocument(file);
-            user.setAvatarDocument(avatar);
-            database.save(user);
-            documentService.deleteDocumentRecord(previous);
-            transaction.commit();
-        } catch (RuntimeException e) {
-            documentService.deleteDocumentFile(avatar);
-            throw e;
-        }
-        documentService.deleteDocumentFile(previous);
+        AppUser user = accessGuard.getCurrentAppUser();
+        Document avatar = documentSlots.replace(user, user.getAvatarDocument(), user::setAvatarDocument,
+                () -> documentService.createImageDocument(file));
         return documentService.getDocumentUrl(avatar);
     }
 
     public void deleteAppUserAvatar() {
-        AppUser user = findAppUserOrThrow();
-        Document previous = user.getAvatarDocument();
-        try (Transaction transaction = database.beginTransaction()) {
-            user.setAvatarDocument(null);
-            database.save(user);
-            documentService.deleteDocumentRecord(previous);
-            transaction.commit();
-        }
-        documentService.deleteDocumentFile(previous);
+        AppUser user = accessGuard.getCurrentAppUser();
+        documentSlots.clear(user, user.getAvatarDocument(), user::setAvatarDocument);
     }
 
     public void deleteAppUser() {
         recentAuthentication.require(config.getDeleteMaxAuthAge());
         String subject = jwtInspector.getSubject();
-        keycloakUserService.deleteKeycloakUser(subject);
-        List<Document> documents;
+        identityProviderAdmin.deleteUser(subject);
+        Optional<AppUser> found = findAppUserBySubject(subject);
+        if (found.isEmpty()) {
+            return;
+        }
+        AppUser user = found.get();
         try {
-            documents = deleteAppUserData(subject);
+            documentSlots.deleteWithDocuments(
+                    () -> pessimisticLocks.lockAppUser(user.getId()),
+                    () -> documentSlots.findDocumentsOfAppUser(user.getId()),
+                    () -> database.delete(user));
         } catch (PersistenceException e) {
             if (SqlStates.isForeignKeyViolation(e)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "The account changed while it was being deleted, try again");
             }
             throw e;
         }
-        documents.forEach(documentService::deleteDocumentFile);
-    }
-
-    private List<Document> deleteAppUserData(String keycloakId) {
-        Optional<AppUser> found = findAppUserByKeycloakId(keycloakId);
-        if (found.isEmpty()) {
-            return List.of();
-        }
-        AppUser user = found.get();
-        List<Document> documents = new ArrayList<>();
-        if (user.getAvatarDocument() != null) {
-            documents.add(user.getAvatarDocument());
-        }
-        try (Transaction transaction = database.beginTransaction()) {
-            List<GameCharacter> characters = database.find(GameCharacter.class)
-                    .setLabel("deleteAppUserCharacters")
-                    .fetch("avatarDocument")
-                    .where().eq("owner.id", user.getId())
-                    .findList();
-            if (!characters.isEmpty()) {
-                List<CharacterSheet> sheets = database.find(CharacterSheet.class)
-                        .setLabel("deleteAppUserSheets")
-                        .fetch("document")
-                        .where().in("character.id", characters.stream().map(GameCharacter::getId).toList())
-                        .findList();
-                if (!sheets.isEmpty()) {
-                    sheets.stream().map(CharacterSheet::getDocument).forEach(documents::add);
-                    database.deleteAll(sheets);
-                }
-                List<Diary> diaries = database.find(Diary.class)
-                        .setLabel("deleteAppUserDiaries")
-                        .fetch("coverDocument")
-                        .where().in("character.id", characters.stream().map(GameCharacter::getId).toList())
-                        .findList();
-                if (!diaries.isEmpty()) {
-                    List<UUID> diaryIds = diaries.stream().map(Diary::getId).toList();
-                    tagService.deleteDiaryPageTagsByDiaries(diaryIds);
-                    database.find(DiaryPage.class)
-                            .setLabel("deleteAppUserPages")
-                            .where().in("diary.id", diaryIds)
-                            .delete();
-                    diaries.stream().map(Diary::getCoverDocument).filter(Objects::nonNull).forEach(documents::add);
-                    database.deleteAll(diaries);
-                }
-                characters.stream().map(GameCharacter::getAvatarDocument).filter(Objects::nonNull).forEach(documents::add);
-                database.deleteAll(characters);
-            }
-            database.delete(user);
-            documents.forEach(documentService::deleteDocumentRecord);
-            transaction.commit();
-        }
-        return documents;
     }
 
     public Map<String, Object> updateAppUserSettings(UpdateSettingsAppUserDTO settings) {
-        AppUser user = findAppUserOrThrow();
+        AppUser user = accessGuard.getCurrentAppUser();
         Map<String, Object> merged = user.getSettings() == null ? new HashMap<>() : new HashMap<>(user.getSettings());
         settings.settings().forEach((key, value) -> {
             if (value == null) {
@@ -178,10 +111,6 @@ public class AppUserService {
         return merged;
     }
 
-    private AppUser findAppUserOrThrow() {
-        return findAppUserByKeycloakId(jwtInspector.getSubject())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-    }
 
     private void validateSettings(Map<String, Object> settings) {
         if (containsUnstorableText(settings)) {
@@ -202,15 +131,15 @@ public class AppUserService {
         };
     }
 
-    private AppUser insertAppUser(String keycloakId, String email) {
+    private AppUser insertAppUser(String subject, String email) {
         AppUser user = new AppUser();
-        user.setKeycloakId(keycloakId);
+        user.setSubject(subject);
         user.setEmail(email);
         try {
             database.save(user);
             return user;
         } catch (DuplicateKeyException e) {
-            return findAppUserByKeycloakId(keycloakId)
+            return findAppUserBySubject(subject)
                     .orElseThrow(() -> new ServiceException("User not found"));
         }
     }
@@ -223,7 +152,7 @@ public class AppUserService {
         return user;
     }
 
-    private Optional<AppUser> findAppUserByKeycloakId(String keycloakId) {
-        return database.find(AppUser.class).setLabel("findAppUserByKeycloakId").fetch("avatarDocument").where().eq("keycloakId", keycloakId).findOneOrEmpty();
+    private Optional<AppUser> findAppUserBySubject(String subject) {
+        return database.find(AppUser.class).setLabel("findAppUserBySubject").fetch("avatarDocument").where().eq("subject", subject).findOneOrEmpty();
     }
 }

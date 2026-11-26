@@ -1,5 +1,5 @@
 import { page } from 'vitest/browser';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import '../../../routes/layout.css';
 import type { FeedbackDraft } from '#lib/feedback/feedback.js';
@@ -294,9 +294,13 @@ describe('FeedbackForm', () => {
 	});
 
 	it('does not leave a form that was not sent', async () => {
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
 		render(FeedbackForm, { send, leave, redirectIn: 1, tickMs: 10 });
 
-		await new Promise((done) => setTimeout(done, 80));
+		await vi.advanceTimersByTimeAsync(1000);
 
 		expect(leave).not.toHaveBeenCalled();
 	});

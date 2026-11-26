@@ -15,6 +15,7 @@ import it.liberheroum.model.PaymentProvider;
 import it.liberheroum.model.PaymentStatus;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.services.PaymentService;
+import it.liberheroum.services.ResourceAccessGuard;
 import it.liberheroum.unit.support.QueryStub;
 import java.time.Instant;
 import java.util.List;
@@ -41,7 +42,7 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PaymentService(database, jwtInspector);
+        service = new PaymentService(database, jwtInspector, new ResourceAccessGuard(database, jwtInspector));
         when(jwtInspector.getSubject()).thenReturn(SUBJECT);
     }
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import 'pdfjs-dist/legacy/web/pdf_viewer.css';
+	import 'pdfjs-dist/web/pdf_viewer.css';
 	import { onDestroy, untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { beforeNavigate, goto } from '$app/navigation';

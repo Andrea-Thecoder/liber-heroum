@@ -52,9 +52,6 @@ public class FeedbackController {
             @ApiResponse(responseCode = "413", description = "Request larger than the maximum request size",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = ExceptionResponse.class))),
-            @ApiResponse(responseCode = "429", description = "Too many submissions from the same address, see the Retry-After header",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
-                            schema = @Schema(implementation = ExceptionResponse.class))),
             @ApiResponse(responseCode = "500", description = "Storage not available",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = ExceptionResponse.class)))

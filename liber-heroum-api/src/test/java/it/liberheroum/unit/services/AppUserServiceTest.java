@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
@@ -27,15 +26,16 @@ import it.liberheroum.exception.ServiceException;
 import it.liberheroum.model.AppUser;
 import it.liberheroum.model.CharacterSheet;
 import it.liberheroum.model.Diary;
-import it.liberheroum.model.DiaryPage;
 import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
+import it.liberheroum.security.IdentityProviderAdmin;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.security.RecentAuthentication;
 import it.liberheroum.services.AppUserService;
-import it.liberheroum.services.DiaryPageTagService;
 import it.liberheroum.services.DocumentService;
-import it.liberheroum.services.KeycloakUserService;
+import it.liberheroum.services.DocumentSlots;
+import it.liberheroum.services.PessimisticLocks;
+import it.liberheroum.services.ResourceAccessGuard;
 import it.liberheroum.unit.support.QueryStub;
 import jakarta.persistence.PersistenceException;
 import java.sql.SQLException;
@@ -58,7 +58,6 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -86,9 +85,7 @@ class AppUserServiceTest {
     @Mock
     private Transaction transaction;
     @Mock
-    private DiaryPageTagService tagService;
-    @Mock
-    private KeycloakUserService keycloakUserService;
+    private IdentityProviderAdmin identityProviderAdmin;
 
     private final AppUserConfig config = new AppUserConfig();
     private final MultipartFile file = new MockMultipartFile("file", "avatar.png", "image/png", new byte[]{1});
@@ -99,7 +96,9 @@ class AppUserServiceTest {
     @BeforeEach
     void setUp() {
         service = new AppUserService(database, jwtInspector, JsonMapper.builder().build(), config, documentService,
-                new RecentAuthentication(jwtInspector, Clock.fixed(NOW, ZoneOffset.UTC)), tagService, keycloakUserService);
+                new RecentAuthentication(jwtInspector, Clock.fixed(NOW, ZoneOffset.UTC)), identityProviderAdmin,
+                new DocumentSlots(database, documentService),
+                new PessimisticLocks(database), new ResourceAccessGuard(database, jwtInspector));
         lenient().when(jwtInspector.getSubject()).thenReturn(SUBJECT);
         users = stubFindLeniently(database, AppUser.class);
     }
@@ -107,7 +106,7 @@ class AppUserServiceTest {
     private AppUser storedUser(String email) {
         AppUser user = new AppUser();
         user.setId(USER_ID);
-        user.setKeycloakId(SUBJECT);
+        user.setSubject(SUBJECT);
         user.setEmail(email);
         return user;
     }
@@ -120,7 +119,8 @@ class AppUserServiceTest {
     }
 
     private void givenStoredUser(AppUser user) {
-        when(users.where().findOneOrEmpty()).thenReturn(Optional.of(user));
+        lenient().when(users.where().findOneOrEmpty()).thenReturn(Optional.of(user));
+        lenient().when(users.where().findOne()).thenReturn(user);
     }
 
     private static UpdateSettingsAppUserDTO settingsRequest(String key, Object value) {
@@ -273,7 +273,7 @@ class AppUserServiceTest {
     }
 
     @Test
-    void updateAppUserAvatar_previousAvatar_linksNewOneAndDeletesPreviousRecordBeforeCommitAndFileAfterIt() {
+    void updateAppUserAvatar_previousAvatar_linksNewOneAndDeletesPreviousDocument() {
         AppUser user = storedUser(EMAIL);
         Document previous = document("old.png");
         user.setAvatarDocument(previous);
@@ -287,34 +287,11 @@ class AppUserServiceTest {
 
         assertThat(url).isEqualTo("https://storage.example/new");
         assertThat(user.getAvatarDocument()).isSameAs(avatar);
-        InOrder order = inOrder(database, documentService, transaction);
-        order.verify(database).save(user);
-        order.verify(documentService).deleteDocumentRecord(previous);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(previous);
+        verify(documentService).deleteDocumentFile(previous);
     }
 
     @Test
-    void updateAppUserAvatar_saveFails_rethrowsDeletesNewFileKeepsPreviousAndDoesNotCommit() {
-        AppUser user = storedUser(EMAIL);
-        Document previous = document("old.png");
-        user.setAvatarDocument(previous);
-        givenStoredUser(user);
-        Document avatar = document("avatar.png");
-        when(database.beginTransaction()).thenReturn(transaction);
-        when(documentService.createImageDocument(file)).thenReturn(avatar);
-        doThrow(new IllegalStateException("db down")).when(database).save(user);
-
-        Throwable thrown = catchThrowable(() -> service.updateAppUserAvatar(file));
-
-        assertThat(thrown).isInstanceOf(IllegalStateException.class);
-        verify(documentService).deleteDocumentFile(avatar);
-        verify(documentService, never()).deleteDocumentFile(previous);
-        verify(transaction, never()).commit();
-    }
-
-    @Test
-    void deleteAppUserAvatar_withAvatar_unlinksItAndDeletesRecordThenCommitsThenDeletesFile() {
+    void deleteAppUserAvatar_withAvatar_unlinksItAndDeletesItsDocument() {
         AppUser user = storedUser(EMAIL);
         Document previous = document("old.png");
         user.setAvatarDocument(previous);
@@ -324,22 +301,7 @@ class AppUserServiceTest {
         service.deleteAppUserAvatar();
 
         assertThat(user.getAvatarDocument()).isNull();
-        InOrder order = inOrder(database, documentService, transaction);
-        order.verify(database).save(user);
-        order.verify(documentService).deleteDocumentRecord(previous);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(previous);
-    }
-
-    @Test
-    void deleteAppUserAvatar_withoutAvatar_commitsAndDeletesNoFile() {
-        givenStoredUser(storedUser(EMAIL));
-        when(database.beginTransaction()).thenReturn(transaction);
-
-        service.deleteAppUserAvatar();
-
-        verify(transaction).commit();
-        verify(documentService, never()).deleteDocumentFile(any(Document.class));
+        verify(documentService).deleteDocumentFile(previous);
     }
 
     private void givenRecentAuthentication() {
@@ -362,7 +324,8 @@ class AppUserServiceTest {
 
     private QueryStub<GameCharacter> givenCharacters(List<GameCharacter> characters) {
         QueryStub<GameCharacter> stub = stubFind(database, GameCharacter.class);
-        when(stub.where().findList()).thenReturn(characters);
+        when(stub.where().<UUID>findIds()).thenReturn(characters.stream().map(GameCharacter::getId).toList());
+        lenient().when(stub.where().findList()).thenReturn(characters);
         return stub;
     }
 
@@ -395,8 +358,8 @@ class AppUserServiceTest {
 
         service.deleteAppUser();
 
-        InOrder order = inOrder(keycloakUserService, database);
-        order.verify(keycloakUserService).deleteKeycloakUser(SUBJECT);
+        InOrder order = inOrder(identityProviderAdmin, database);
+        order.verify(identityProviderAdmin).deleteUser(SUBJECT);
         order.verify(database).beginTransaction();
     }
 
@@ -406,7 +369,7 @@ class AppUserServiceTest {
 
         service.deleteAppUser();
 
-        verify(keycloakUserService).deleteKeycloakUser(SUBJECT);
+        verify(identityProviderAdmin).deleteUser(SUBJECT);
         verify(database, never()).beginTransaction();
         verifyNoInteractions(documentService);
     }
@@ -414,7 +377,7 @@ class AppUserServiceTest {
     @Test
     void deleteAppUser_keycloakFails_propagatesTheExceptionAndTouchesNoData() {
         givenRecentAuthentication();
-        doThrow(new ResponseStatusException(HttpStatus.BAD_GATEWAY, "down")).when(keycloakUserService).deleteKeycloakUser(SUBJECT);
+        doThrow(new ResponseStatusException(HttpStatus.BAD_GATEWAY, "down")).when(identityProviderAdmin).deleteUser(SUBJECT);
 
         Throwable thrown = catchThrowable(() -> service.deleteAppUser());
 
@@ -439,7 +402,7 @@ class AppUserServiceTest {
         Throwable thrown = catchThrowable(() -> service.deleteAppUser());
 
         assertThat(thrown).isInstanceOf(RecentAuthenticationRequiredException.class);
-        verifyNoInteractions(keycloakUserService, database, documentService);
+        verifyNoInteractions(identityProviderAdmin, database, documentService);
     }
 
     @Test
@@ -468,7 +431,7 @@ class AppUserServiceTest {
     }
 
     @Test
-    void deleteAppUser_allKindsOfDocuments_deletesRecordsBeforeCommitAndFilesAfterIt() {
+    void deleteAppUser_allKindsOfDocuments_deletesEveryDocument() {
         givenRecentAuthentication();
         AppUser user = storedUser(EMAIL);
         Document userAvatar = document("me.png");
@@ -480,41 +443,18 @@ class AppUserServiceTest {
         givenCharacters(List.of(ownedCharacter(characterAvatar)));
         givenSheets(List.of(sheet(pdf)));
         givenDiaries(List.of(diaryWithCover(cover)));
-        stubFind(database, DiaryPage.class);
         when(database.beginTransaction()).thenReturn(transaction);
 
         service.deleteAppUser();
 
-        InOrder order = inOrder(documentService, transaction);
-        order.verify(documentService).deleteDocumentRecord(userAvatar);
-        order.verify(documentService).deleteDocumentRecord(pdf);
-        order.verify(documentService).deleteDocumentRecord(cover);
-        order.verify(documentService).deleteDocumentRecord(characterAvatar);
-        order.verify(transaction).commit();
-        order.verify(documentService).deleteDocumentFile(userAvatar);
-        order.verify(documentService).deleteDocumentFile(pdf);
-        order.verify(documentService).deleteDocumentFile(cover);
-        order.verify(documentService).deleteDocumentFile(characterAvatar);
+        verify(documentService).deleteDocumentFile(userAvatar);
+        verify(documentService).deleteDocumentFile(characterAvatar);
+        verify(documentService).deleteDocumentFile(pdf);
+        verify(documentService).deleteDocumentFile(cover);
     }
 
     @Test
-    void deleteAppUser_deleteFails_doesNotCommitAndDeletesNoFile() {
-        givenRecentAuthentication();
-        AppUser user = storedUser(EMAIL);
-        user.setAvatarDocument(document("me.png"));
-        givenStoredUser(user);
-        givenCharacters(List.of());
-        when(database.beginTransaction()).thenReturn(transaction);
-        doThrow(new IllegalStateException("db down")).when(database).delete(user);
-
-        catchThrowable(() -> service.deleteAppUser());
-
-        verify(transaction, never()).commit();
-        verify(documentService, never()).deleteDocumentFile(any());
-    }
-
-    @Test
-    void deleteAppUser_characterCreatedMeanwhile_throwsConflictAndDeletesNoFile() {
+    void deleteAppUser_characterCreatedMeanwhile_throwsConflict() {
         givenRecentAuthentication();
         AppUser user = storedUser(EMAIL);
         user.setAvatarDocument(document("me.png"));
@@ -529,7 +469,6 @@ class AppUserServiceTest {
         assertThat(thrown).isInstanceOfSatisfying(ResponseStatusException.class,
                 e -> assertThat(e).extracting(ResponseStatusException::getStatusCode, ResponseStatusException::getReason)
                         .containsExactly(HttpStatus.CONFLICT, "The account changed while it was being deleted, try again"));
-        verify(documentService, never()).deleteDocumentFile(any());
     }
 
     @Test

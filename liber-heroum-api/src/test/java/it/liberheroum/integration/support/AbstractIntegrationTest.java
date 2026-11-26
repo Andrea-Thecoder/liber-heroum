@@ -15,6 +15,7 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
@@ -28,6 +29,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
+@AutoConfigureMetrics
 public abstract class AbstractIntegrationTest {
 
     protected static final String FEEDBACK_BUCKET = "feedback-documents";
@@ -66,7 +68,7 @@ public abstract class AbstractIntegrationTest {
 
     @AfterEach
     void cleanUp() throws Exception {
-        jdbc.execute("truncate table payment, feedback_document, feedback, character_sheet, character_background, diary_page_tag, diary_page, diary, game_character, app_user, document cascade");
+        jdbc.execute("truncate table shedlock, payment, feedback_document, feedback, character_sheet, character_background, diary_page_tag, diary_page, diary, game_character, app_user, document cascade");
         for (String bucket : List.of(TestContainers.BUCKET, FEEDBACK_BUCKET)) {
             for (String key : storedObjectKeys(bucket)) {
                 minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(key).build());

@@ -37,6 +37,7 @@ public class Diary extends AbstractAuditable {
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "character_id", nullable = false)
+    @DbForeignKey(onDelete = ConstraintMode.CASCADE)
     private GameCharacter character;
 
     @ManyToOne

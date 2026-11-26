@@ -8,12 +8,14 @@ describe('sheetColorFor', () => {
 		expect(sheetColorFor(id)).toBe(sheetColorFor(id));
 	});
 
-	it('always returns one of the preset colours, even for an empty id', () => {
-		const hexes = COLOR_PRESETS.map((preset) => preset.hex);
-		for (const id of ['', 'a', 'sheet-1', 'sheet-2', 'x'.repeat(40)]) {
+	it.each(['', 'a', 'sheet-1', 'sheet-2', 'x'.repeat(40)])(
+		'returns one of the preset colours for the id "%s"',
+		(id) => {
+			const hexes = COLOR_PRESETS.map((preset) => preset.hex);
+
 			expect(hexes).toContain(sheetColorFor(id));
 		}
-	});
+	);
 
 	it('does not give every sheet the same colour', () => {
 		const colours = new Set(['a', 'b', 'c', 'd', 'e', 'f'].map((id) => sheetColorFor(id)));

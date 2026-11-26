@@ -1,6 +1,7 @@
 package it.liberheroum.integration.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.jayway.jsonpath.JsonPath;
 import it.liberheroum.config.CharacterSheetConfig;
@@ -133,9 +134,13 @@ class CharacterSheetIT extends AbstractIntegrationTest {
 
         UUID id = UUID.fromString(json(result, "$.id"));
         assertThat(result).hasStatus(HttpStatus.CREATED);
-        assertThat(List.of(json(result, "$.title"), json(result, "$.system"), json(result, "$.fileName"), json(result, "$.characterId"),
-                json(result, "$.sizeBytes")))
-                .containsExactly("Alira, level 9", "D&D 5e", "alira.pdf", characterId.toString(), String.valueOf(PDF.length));
+        assertSoftly(softly -> {
+            softly.assertThat(json(result, "$.title")).isEqualTo("Alira, level 9");
+            softly.assertThat(json(result, "$.system")).isEqualTo("D&D 5e");
+            softly.assertThat(json(result, "$.fileName")).isEqualTo("alira.pdf");
+            softly.assertThat(json(result, "$.characterId")).isEqualTo(characterId.toString());
+            softly.assertThat(json(result, "$.sizeBytes")).isEqualTo(String.valueOf(PDF.length));
+        });
         assertThat(jdbc.queryForMap("select character_id, title, game_system, created_by from character_sheet where id = ?", id))
                 .containsEntry("character_id", characterId).containsEntry("title", "Alira, level 9")
                 .containsEntry("game_system", "D&D 5e").containsEntry("created_by", TestJwt.USER_SUBJECT);
@@ -163,7 +168,12 @@ class CharacterSheetIT extends AbstractIntegrationTest {
 
         createSheets(characterId, 3);
 
-        assertThat(List.of(countRows("character_sheet"), countRows("document"), storedObjectKeys().size())).containsOnly(3);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("character_sheet")).isEqualTo(3);
+            softly.assertThat(countRows("document")).isEqualTo(3);
+            softly.assertThat(storedFiles).isEqualTo(3);
+        });
     }
 
     @Test
@@ -184,7 +194,12 @@ class CharacterSheetIT extends AbstractIntegrationTest {
         MvcTestResult result = uploadSheet(characterId, "Alira", null, file, CURRENT_USER);
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(List.of(countRows("character_sheet"), countRows("document"), storedObjectKeys().size())).containsOnly(0);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("character_sheet")).isEqualTo(0);
+            softly.assertThat(countRows("document")).isEqualTo(0);
+            softly.assertThat(storedFiles).isEqualTo(0);
+        });
     }
 
     @Test
@@ -196,7 +211,12 @@ class CharacterSheetIT extends AbstractIntegrationTest {
         MvcTestResult result = uploadSheet(othersCharacter, "Alira");
 
         assertThat(result).hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(List.of(countRows("character_sheet"), countRows("document"), storedObjectKeys().size())).containsOnly(0);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("character_sheet")).isEqualTo(0);
+            softly.assertThat(countRows("document")).isEqualTo(0);
+            softly.assertThat(storedFiles).isEqualTo(0);
+        });
     }
 
     @Test
@@ -209,7 +229,12 @@ class CharacterSheetIT extends AbstractIntegrationTest {
 
         assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(json(result, "$.violations[0].message")).isEqualTo("The character has too many sheets (" + limit + ")");
-        assertThat(List.of(countRows("character_sheet"), countRows("document"), storedObjectKeys().size())).containsOnly(limit);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("character_sheet")).isEqualTo(limit);
+            softly.assertThat(countRows("document")).isEqualTo(limit);
+            softly.assertThat(storedFiles).isEqualTo(limit);
+        });
     }
 
     @Test
@@ -242,7 +267,12 @@ class CharacterSheetIT extends AbstractIntegrationTest {
                 .toList();
         uploads.forEach(CompletableFuture::join);
 
-        assertThat(List.of(countRows("character_sheet"), countRows("document"), storedObjectKeys().size())).containsOnly(limit);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("character_sheet")).isEqualTo(limit);
+            softly.assertThat(countRows("document")).isEqualTo(limit);
+            softly.assertThat(storedFiles).isEqualTo(limit);
+        });
     }
 
     // ---- GET /characters/{characterId}/sheets ----
@@ -317,7 +347,10 @@ class CharacterSheetIT extends AbstractIntegrationTest {
         MvcTestResult result = mvc.get().uri("/characters/{id}/sheets?page=2&size=2", characterId).exchange();
 
         assertThat(listAt(result, "$.list[*].title")).containsExactly("Sheet 3", "Sheet 4");
-        assertThat(List.of(json(result, "$.totalRows"), json(result, "$.totalPages"))).containsExactly("5", "3");
+        assertSoftly(softly -> {
+            softly.assertThat(json(result, "$.totalRows")).isEqualTo("5");
+            softly.assertThat(json(result, "$.totalPages")).isEqualTo("3");
+        });
         assertThat(listAt(result, "$.list[*].url")).hasSize(2).allSatisfy(url -> assertThat(url).startsWith("http"));
         assertThat(listAt(result, "$.list[*].downloadUrl")).hasSize(2).allSatisfy(url -> assertThat(url).startsWith("http"));
     }
@@ -344,12 +377,22 @@ class CharacterSheetIT extends AbstractIntegrationTest {
         String url = json(result, "$.url");
         String downloadUrl = json(result, "$.downloadUrl");
         assertThat(result).hasStatusOk();
-        assertThat(List.of(json(result, "$.id"), json(result, "$.characterId"), json(result, "$.title"), json(result, "$.system"),
-                json(result, "$.fileName"), json(result, "$.sizeBytes")))
-                .containsExactly(id.toString(), characterId.toString(), "Alira, level 9", "D&D 5e", "Scheda di Alira.pdf",
-                        String.valueOf(PDF.length));
-        assertThat(List.of(objectKeyOf(url), objectKeyOf(downloadUrl))).containsOnly(sheetObjectKey(id));
-        assertThat(List.of(queryParam(url, "X-Amz-Expires"), queryParam(downloadUrl, "X-Amz-Expires"))).containsOnly(expiry);
+        assertSoftly(softly -> {
+            softly.assertThat(json(result, "$.id")).isEqualTo(id.toString());
+            softly.assertThat(json(result, "$.characterId")).isEqualTo(characterId.toString());
+            softly.assertThat(json(result, "$.title")).isEqualTo("Alira, level 9");
+            softly.assertThat(json(result, "$.system")).isEqualTo("D&D 5e");
+            softly.assertThat(json(result, "$.fileName")).isEqualTo("Scheda di Alira.pdf");
+            softly.assertThat(json(result, "$.sizeBytes")).isEqualTo(String.valueOf(PDF.length));
+        });
+        assertSoftly(softly -> {
+            softly.assertThat(objectKeyOf(url)).isEqualTo(sheetObjectKey(id));
+            softly.assertThat(objectKeyOf(downloadUrl)).isEqualTo(sheetObjectKey(id));
+        });
+        assertSoftly(softly -> {
+            softly.assertThat(queryParam(url, "X-Amz-Expires")).isEqualTo(expiry);
+            softly.assertThat(queryParam(downloadUrl, "X-Amz-Expires")).isEqualTo(expiry);
+        });
         assertThat(URLDecoder.decode(queryParam(downloadUrl, "response-content-disposition"), StandardCharsets.UTF_8))
                 .isEqualTo("attachment; filename*=UTF-8''Scheda%20di%20Alira.pdf");
         assertThat(queryParam(url, "response-content-disposition")).isNull();
@@ -453,8 +496,11 @@ class CharacterSheetIT extends AbstractIntegrationTest {
 
         String newKey = sheetObjectKey(id);
         assertThat(result).hasStatusOk();
-        assertThat(List.of(json(result, "$.fileName"), json(result, "$.title"), json(result, "$.system")))
-                .containsExactly("edited.pdf", "Alira, level 9", "D&D 5e");
+        assertSoftly(softly -> {
+            softly.assertThat(json(result, "$.fileName")).isEqualTo("edited.pdf");
+            softly.assertThat(json(result, "$.title")).isEqualTo("Alira, level 9");
+            softly.assertThat(json(result, "$.system")).isEqualTo("D&D 5e");
+        });
         assertThat(objectKeyOf(json(result, "$.url"))).isEqualTo(newKey);
         assertThat(newKey).isNotEqualTo(oldKey);
         assertThat(storedObjectKeys()).containsExactly(newKey);
@@ -512,7 +558,12 @@ class CharacterSheetIT extends AbstractIntegrationTest {
         MvcTestResult result = mvc.delete().uri("/sheets/{id}", othersSheet).exchange();
 
         assertThat(result).hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(List.of(countRows("character_sheet"), countRows("document"), storedObjectKeys().size())).containsOnly(1);
+        int storedFiles = storedObjectKeys().size();
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("character_sheet")).isEqualTo(1);
+            softly.assertThat(countRows("document")).isEqualTo(1);
+            softly.assertThat(storedFiles).isEqualTo(1);
+        });
     }
 
     // ---- cascade ----
@@ -538,7 +589,7 @@ class CharacterSheetIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void deleteGameCharacter_sheetAddedBeforeCommit_returnsConflictAndKeepsCharacter() {
+    void deleteGameCharacter_sheetAddedWhileWaitingForLock_returnsOkAndDeletesAlsoTheNewSheetAndDocument() {
         UUID characterId = characterWithOwner("Alira");
         UUID documentId = UUID.randomUUID();
 
@@ -549,9 +600,13 @@ class CharacterSheetIT extends AbstractIntegrationTest {
                     () -> mvc.delete().uri("/characters/{id}", characterId).with(currentUser()).exchange());
             concurrent.commit();
 
-            assertThat(delete.join()).hasStatus(HttpStatus.CONFLICT);
+            assertThat(delete.join()).hasStatusOk();
         }
-        assertThat(countRows("game_character")).isEqualTo(1);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("game_character")).isEqualTo(0);
+            softly.assertThat(countRows("character_sheet")).isEqualTo(0);
+            softly.assertThat(countRows("document")).isEqualTo(0);
+        });
     }
 
     @Test
@@ -566,7 +621,11 @@ class CharacterSheetIT extends AbstractIntegrationTest {
         MvcTestResult result = mvc.delete().uri("/me").exchange();
 
         assertThat(result).hasStatusOk();
-        assertThat(List.of(countRows("app_user"), countRows("game_character"), countRows("document"))).containsOnly(1);
+        assertSoftly(softly -> {
+            softly.assertThat(countRows("app_user")).isEqualTo(1);
+            softly.assertThat(countRows("game_character")).isEqualTo(1);
+            softly.assertThat(countRows("document")).isEqualTo(1);
+        });
         assertThat(jdbc.queryForList("select id from character_sheet", UUID.class)).containsExactly(othersSheet);
         assertThat(storedObjectKeys()).containsExactly(othersKey);
     }

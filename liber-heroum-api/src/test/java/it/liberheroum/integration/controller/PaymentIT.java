@@ -1,6 +1,7 @@
 package it.liberheroum.integration.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.jayway.jsonpath.JsonPath;
 import it.liberheroum.integration.support.AbstractIntegrationTest;
@@ -33,7 +34,7 @@ class PaymentIT extends AbstractIntegrationTest {
 
     private AppUser createUser(String subject, RequestPostProcessor user) {
         createAppUser(user);
-        return database.find(AppUser.class).where().eq("keycloakId", subject).findOne();
+        return database.find(AppUser.class).where().eq("subject", subject).findOne();
     }
 
     private AppUser createCurrentUser() {
@@ -135,8 +136,11 @@ class PaymentIT extends AbstractIntegrationTest {
         MvcTestResult result = mvc.get().uri("/me/payments?size=2&page=2").with(USER).exchange();
 
         assertThat(descriptions(result)).containsExactly("C");
-        assertThat(List.of(json(result, "$.totalRows"), json(result, "$.totalPages"), json(result, "$.page")))
-                .containsExactly("3", "2", "2");
+        assertSoftly(softly -> {
+            softly.assertThat(json(result, "$.totalRows")).isEqualTo("3");
+            softly.assertThat(json(result, "$.totalPages")).isEqualTo("2");
+            softly.assertThat(json(result, "$.page")).isEqualTo("2");
+        });
     }
 
     @Test

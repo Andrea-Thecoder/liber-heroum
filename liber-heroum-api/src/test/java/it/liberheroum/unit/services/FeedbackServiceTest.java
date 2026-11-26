@@ -93,10 +93,6 @@ class FeedbackServiceTest {
         return new MockMultipartFile("files", name, "image/png", PNG);
     }
 
-    private static MultipartFile emptyFile() {
-        return new MockMultipartFile("files", "", "application/octet-stream", new byte[0]);
-    }
-
     private static MultipartFile pngOfSize(String name, int size) {
         return new MockMultipartFile("files", name, "image/png", Arrays.copyOf(PNG, size));
     }

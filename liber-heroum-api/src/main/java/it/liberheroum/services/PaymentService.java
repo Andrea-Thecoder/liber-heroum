@@ -9,9 +9,7 @@ import it.liberheroum.dto.search.PaymentSearchRequest;
 import it.liberheroum.model.Payment;
 import it.liberheroum.security.JwtInspector;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.UUID;
 
@@ -21,24 +19,18 @@ public class PaymentService {
 
     private final Database database;
     private final JwtInspector jwtInspector;
+    private final ResourceAccessGuard accessGuard;
 
     public PagedResultDTO<BasePaymentDTO> findAllPayments(PaymentSearchRequest request) {
         ExpressionList<Payment> query = database.find(Payment.class)
                 .setLabel("findAllPayments")
-                .where().eq("appUser.keycloakId", jwtInspector.getSubject());
+                .where().eq("appUser.subject", jwtInspector.getSubject());
         request.applyFilter(query);
         request.applySortAndPagination(query, "paidAt");
         return PagedResultDTO.of(query.findPagedList(), BasePaymentDTO::from);
     }
 
     public DetailPaymentDTO getPaymentById(UUID id) {
-        Payment payment = database.find(Payment.class)
-                .setLabel("getPaymentById")
-                .where().idEq(id).eq("appUser.keycloakId", jwtInspector.getSubject())
-                .findOne();
-        if (payment == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment not found");
-        }
-        return DetailPaymentDTO.from(payment);
+        return DetailPaymentDTO.from(accessGuard.getPaymentByIdAndOwner(id));
     }
 }

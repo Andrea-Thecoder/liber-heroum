@@ -83,12 +83,6 @@ class FeedbackControllerTest {
         return feedbackForm("idea", "Great tags");
     }
 
-    private InsertFeedbackDTO sentRequest() {
-        ArgumentCaptor<InsertFeedbackDTO> request = ArgumentCaptor.forClass(InsertFeedbackDTO.class);
-        verify(service).createFeedback(request.capture(), any());
-        return request.getValue();
-    }
-
     // ---- POST /feedback ----
 
     @Test

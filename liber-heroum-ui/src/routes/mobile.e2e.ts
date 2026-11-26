@@ -36,11 +36,9 @@ for (const { name, options } of phones) {
 
 		test('opens the landing page without sideways scroll', async ({ page }) => {
 			await page.goto('/');
+
 			await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-			const overflow = await page.evaluate(
-				() => document.documentElement.scrollWidth - document.documentElement.clientWidth
-			);
-			expect(overflow).toBe(0);
+			expect(await overflowOf(page)).toBe(0);
 		});
 
 		test('opens the privacy page without sideways scroll', async ({ page }) => {

@@ -4,11 +4,9 @@
 	import { loginToApp } from '#lib/auth/login.js';
 	import BrandLink from '#lib/components/ui/BrandLink.svelte';
 	import Container from '#lib/components/ui/Container.svelte';
+	import FooterLink from '#lib/components/ui/FooterLink.svelte';
 	import LinkButton from '#lib/components/ui/LinkButton.svelte';
 	import FooterColumn from './FooterColumn.svelte';
-
-	const linkClass =
-		'inline-flex min-h-[44px] items-center text-soft underline underline-offset-4 hover:opacity-80';
 
 	const disabled = $derived(auth.status === 'loading' || auth.status === 'error');
 </script>
@@ -26,17 +24,17 @@
 		</div>
 		<div class="flex flex-wrap gap-x-14 gap-y-8">
 			<FooterColumn title="Prodotto">
-				<a href={resolve('/piani')} class={linkClass}>Piani</a>
-				<a href={resolve('/faq')} class={linkClass}>Domande frequenti</a>
+				<FooterLink href={resolve('/piani')}>Piani</FooterLink>
+				<FooterLink href={resolve('/faq')}>Domande frequenti</FooterLink>
 			</FooterColumn>
 			<FooterColumn title="Aiuto">
-				<a href={resolve('/feedback')} class={linkClass}>Feedback</a>
-				<a href={resolve('/contatti')} class={linkClass}>Contatti</a>
+				<FooterLink href={resolve('/feedback')}>Feedback</FooterLink>
+				<FooterLink href={resolve('/contatti')}>Contatti</FooterLink>
 			</FooterColumn>
 			<FooterColumn title="Legale">
-				<a href={resolve('/privacy')} class={linkClass}>Privacy</a>
+				<FooterLink href={resolve('/privacy')}>Privacy</FooterLink>
 				{#if auth.status === 'authenticated'}
-					<a href={resolve('/(app)/profile')} class={linkClass}>Il mio profilo</a>
+					<FooterLink href={resolve('/(app)/profile')}>Il mio profilo</FooterLink>
 				{:else}
 					<LinkButton onclick={loginToApp} {disabled}>Accedi</LinkButton>
 				{/if}

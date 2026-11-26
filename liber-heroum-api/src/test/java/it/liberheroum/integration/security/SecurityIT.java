@@ -31,6 +31,7 @@ import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -56,6 +57,9 @@ class SecurityIT extends AbstractIntegrationTest {
 
     @LocalServerPort
     private int port;
+
+    @LocalManagementPort
+    private int managementPort;
 
     private static RealmResource realm() {
         return TestContainers.KEYCLOAK.getKeycloakAdminClient().realm(TestContainers.REALM);
@@ -218,8 +222,8 @@ class SecurityIT extends AbstractIntegrationTest {
 
         mvc.post().uri("/me").header(HttpHeaders.AUTHORIZATION, bearer(token)).exchange();
 
-        assertThat(jdbc.queryForMap("select keycloak_id, email from app_user"))
-                .containsEntry("keycloak_id", keycloakUserId("user1"))
+        assertThat(jdbc.queryForMap("select subject, email from app_user"))
+                .containsEntry("subject", keycloakUserId("user1"))
                 .containsEntry("email", "user1@example.com");
     }
 
@@ -338,10 +342,6 @@ class SecurityIT extends AbstractIntegrationTest {
     @Test
     void createFeedback_noToken_returnsCreated() {
         assertThat(mvc.post().uri("/feedback").multipart()
-                .with(request -> {
-                    request.setRemoteAddr("192.0.2.77");
-                    return request;
-                })
                 .param("type", "idea").param("message", "Great tags").param("email", "alira@example.com").param("consent", "true"))
                 .hasStatus(HttpStatus.CREATED);
     }
@@ -368,67 +368,116 @@ class SecurityIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void getActuatorHealth_noToken_returnsOk() {
-        assertThat(mvc.get().uri("/actuator/health")).hasStatusOk();
+    void getActuatorHealth_noToken_returnsStatusWithoutDetails() {
+        HttpResponse<String> response = managementGet("/actuator/health");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"status\":\"UP\"").doesNotContain("components");
     }
 
     @Test
-    void getActuatorHealth_noToken_hidesDetails() {
-        assertThat(mvc.get().uri("/actuator/health")).bodyJson().doesNotHavePath("$.components");
-    }
-
-    @Test
-    void getActuatorHealth_userToken_hidesDetails() {
+    void getActuatorHealth_userToken_returnsStatusWithoutDetails() {
         String token = accessToken(TestContainers.FRONTEND_CLIENT, "user1");
 
-        assertThat(mvc.get().uri("/actuator/health").header(HttpHeaders.AUTHORIZATION, bearer(token)))
-                .bodyJson().doesNotHavePath("$.components");
-    }
+        HttpResponse<String> response = managementGet("/actuator/health", HttpHeaders.AUTHORIZATION, bearer(token));
 
-    @Test
-    void getActuatorHealth_adminToken_showsDetails() {
-        String token = accessToken(TestContainers.FRONTEND_CLIENT, "admin1");
-
-        assertThat(mvc.get().uri("/actuator/health").header(HttpHeaders.AUTHORIZATION, bearer(token)))
-                .bodyJson().hasPath("$.components.db");
-    }
-
-    @Test
-    void getActuatorPrometheus_noToken_returnsUnauthorized() {
-        assertThat(mvc.get().uri("/actuator/prometheus")).hasStatus(HttpStatus.UNAUTHORIZED);
-    }
-
-    @Test
-    void getActuatorMetrics_noToken_returnsUnauthorized() {
-        assertThat(mvc.get().uri("/actuator/metrics")).hasStatus(HttpStatus.UNAUTHORIZED);
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).doesNotContain("components");
     }
 
     @Test
     void getActuatorHealth_tokenWithoutRoles_returnsOk() {
         String token = accessToken(TestContainers.FRONTEND_CLIENT, NO_ROLE_USER);
 
-        assertThat(mvc.get().uri("/actuator/health").header(HttpHeaders.AUTHORIZATION, bearer(token))).hasStatusOk();
+        HttpResponse<String> response = managementGet("/actuator/health", HttpHeaders.AUTHORIZATION, bearer(token));
+
+        assertThat(response.statusCode()).isEqualTo(200);
     }
 
     @Test
-    void getActuatorPrometheus_tokenWithoutRoles_returnsForbidden() {
+    void getActuatorHealth_adminToken_showsDetails() {
+        String token = accessToken(TestContainers.FRONTEND_CLIENT, "admin1");
+
+        HttpResponse<String> response = managementGet("/actuator/health", HttpHeaders.AUTHORIZATION, bearer(token));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"components\"", "\"db\"");
+    }
+
+    @Test
+    void getActuatorPrometheus_noToken_returnsMetricsTaggedWithApplication() {
+        HttpResponse<String> response = managementGet("/actuator/prometheus");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("jvm_memory_used_bytes{application=\"liber-heroum-api\"");
+    }
+
+    @Test
+    void getActuatorPrometheus_afterApiRequest_exposesResponseTimeHistogram() {
+        realGet("/characters");
+
+        HttpResponse<String> response = managementGet("/actuator/prometheus");
+
+        assertThat(response.body()).contains("http_server_requests_seconds_bucket{");
+    }
+
+    @Test
+    void getActuatorInfo_noToken_returnsUnauthorized() {
+        HttpResponse<String> response = managementGet("/actuator/info");
+
+        assertThat(response.statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void getActuatorInfo_tokenWithoutRoles_returnsForbidden() {
         String token = accessToken(TestContainers.FRONTEND_CLIENT, NO_ROLE_USER);
 
-        assertThat(mvc.get().uri("/actuator/prometheus").header(HttpHeaders.AUTHORIZATION, bearer(token))).hasStatus(HttpStatus.FORBIDDEN);
+        HttpResponse<String> response = managementGet("/actuator/info", HttpHeaders.AUTHORIZATION, bearer(token));
+
+        assertThat(response.statusCode()).isEqualTo(403);
     }
 
     @Test
-    void getActuatorMetrics_tokenWithoutRoles_returnsForbidden() {
-        String token = accessToken(TestContainers.FRONTEND_CLIENT, NO_ROLE_USER);
-
-        assertThat(mvc.get().uri("/actuator/metrics").header(HttpHeaders.AUTHORIZATION, bearer(token))).hasStatus(HttpStatus.FORBIDDEN);
-    }
-
-    @Test
-    void getActuatorHealth_userToken_returnsOk() {
+    void getActuatorInfo_userToken_returnsForbidden() {
         String token = accessToken(TestContainers.FRONTEND_CLIENT, "user1");
 
-        assertThat(mvc.get().uri("/actuator/health").header(HttpHeaders.AUTHORIZATION, bearer(token))).hasStatusOk();
+        HttpResponse<String> response = managementGet("/actuator/info", HttpHeaders.AUTHORIZATION, bearer(token));
+
+        assertThat(response.statusCode()).isEqualTo(403);
+    }
+
+    @Test
+    void getActuatorInfo_adminToken_returnsOk() {
+        String token = accessToken(TestContainers.FRONTEND_CLIENT, "admin1");
+
+        HttpResponse<String> response = managementGet("/actuator/info", HttpHeaders.AUTHORIZATION, bearer(token));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void getActuatorMetrics_adminToken_returnsNotFound() {
+        String token = accessToken(TestContainers.FRONTEND_CLIENT, "admin1");
+
+        HttpResponse<String> response = managementGet("/actuator/metrics", HttpHeaders.AUTHORIZATION, bearer(token));
+
+        assertThat(response.statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void getActuatorPrometheus_applicationPortAdminToken_returnsNotFound() {
+        String token = accessToken(TestContainers.FRONTEND_CLIENT, "admin1");
+
+        HttpResponse<String> response = realGet("/actuator/prometheus", HttpHeaders.AUTHORIZATION, bearer(token));
+
+        assertThat(response.statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void getActuatorHealth_applicationPortNoToken_returnsUnauthorized() {
+        HttpResponse<String> response = realGet("/actuator/health");
+
+        assertThat(response.statusCode()).isEqualTo(401);
     }
 
     @Test
@@ -479,34 +528,6 @@ class SecurityIT extends AbstractIntegrationTest {
         assertThat(exposedHeadersOfStepUpResponse()).contains(HttpHeaders.WWW_AUTHENTICATE);
     }
 
-    @Test
-    void getActuatorPrometheus_userToken_returnsForbidden() {
-        String token = accessToken(TestContainers.FRONTEND_CLIENT, "user1");
-
-        assertThat(mvc.get().uri("/actuator/prometheus").header(HttpHeaders.AUTHORIZATION, bearer(token))).hasStatus(HttpStatus.FORBIDDEN);
-    }
-
-    @Test
-    void getActuatorPrometheus_adminToken_returnsNotFound() {
-        String token = accessToken(TestContainers.FRONTEND_CLIENT, "admin1");
-
-        assertThat(mvc.get().uri("/actuator/prometheus").header(HttpHeaders.AUTHORIZATION, bearer(token))).hasStatus(HttpStatus.NOT_FOUND);
-    }
-
-    @Test
-    void getActuatorMetrics_userToken_returnsForbidden() {
-        String token = accessToken(TestContainers.FRONTEND_CLIENT, "user1");
-
-        assertThat(mvc.get().uri("/actuator/metrics").header(HttpHeaders.AUTHORIZATION, bearer(token))).hasStatus(HttpStatus.FORBIDDEN);
-    }
-
-    @Test
-    void getActuatorMetrics_adminToken_returnsOk() {
-        String token = accessToken(TestContainers.FRONTEND_CLIENT, "admin1");
-
-        assertThat(mvc.get().uri("/actuator/metrics").header(HttpHeaders.AUTHORIZATION, bearer(token))).hasStatusOk();
-    }
-
     static Stream<Arguments> meEndpoints() {
         return Stream.of(
                 Arguments.of(HttpMethod.GET, "/me"),
@@ -517,7 +538,15 @@ class SecurityIT extends AbstractIntegrationTest {
     }
 
     private HttpResponse<String> realGet(String path, String... headers) {
-        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/liber-heroum-api" + path)).GET();
+        return get("http://localhost:" + port + "/api/v1/liber-heroum-api" + path, headers);
+    }
+
+    private HttpResponse<String> managementGet(String path, String... headers) {
+        return get("http://localhost:" + managementPort + path, headers);
+    }
+
+    private static HttpResponse<String> get(String url, String... headers) {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url)).GET();
         Stream.iterate(0, index -> index < headers.length, index -> index + 2)
                 .forEach(index -> request.header(headers[index], headers[index + 1]));
         try (HttpClient client = HttpClient.newHttpClient()) {

@@ -25,7 +25,8 @@ import it.liberheroum.model.DiaryPage;
 import it.liberheroum.model.DiaryPageTag;
 import it.liberheroum.security.JwtInspector;
 import it.liberheroum.services.DiaryPageTagService;
-import it.liberheroum.services.OwnedResources;
+import it.liberheroum.services.ResourceAccessGuard;
+import it.liberheroum.services.PessimisticLocks;
 import it.liberheroum.unit.support.QueryStub;
 import jakarta.persistence.PersistenceException;
 import java.sql.SQLException;
@@ -65,7 +66,8 @@ class DiaryPageTagServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DiaryPageTagService(database, jwtInspector, new OwnedResources(database, jwtInspector));
+        service = new DiaryPageTagService(database, jwtInspector, new ResourceAccessGuard(database, jwtInspector),
+                new PessimisticLocks(database));
         diary = new Diary();
         diary.setId(DIARY_ID);
         page = new DiaryPage();
@@ -271,6 +273,6 @@ class DiaryPageTagServiceTest {
         service.findTagByPages(List.of(PAGE_ID));
 
         verify(found.where()).in("page.id", List.of(PAGE_ID));
-        verify(found.where()).eq("diary.character.owner.keycloakId", SUBJECT);
+        verify(found.where()).eq("diary.character.owner.subject", SUBJECT);
     }
 }

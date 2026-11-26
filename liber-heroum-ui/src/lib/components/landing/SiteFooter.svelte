@@ -4,10 +4,8 @@
 	import { loginToApp } from '#lib/auth/login.js';
 	import { registerToApp } from '#lib/auth/register.js';
 	import Container from '#lib/components/ui/Container.svelte';
+	import FooterLink from '#lib/components/ui/FooterLink.svelte';
 	import LinkButton from '#lib/components/ui/LinkButton.svelte';
-
-	const linkClass =
-		'inline-flex min-h-[44px] items-center text-soft underline underline-offset-4 hover:opacity-80';
 
 	const disabled = $derived(auth.status === 'loading' || auth.status === 'error');
 </script>
@@ -20,10 +18,10 @@
 	<div
 		class="grid grid-cols-3 gap-x-5 gap-y-1 min-[561px]:flex min-[561px]:flex-wrap min-[561px]:gap-x-6"
 	>
-		<a href={resolve('/piani')} class={linkClass}>Piani</a>
-		<a href={resolve('/faq')} class={linkClass}>FAQ</a>
-		<a href={resolve('/contatti')} class={linkClass}>Contatti</a>
-		<a href={resolve('/privacy')} class={linkClass}>Privacy</a>
+		<FooterLink href={resolve('/piani')}>Piani</FooterLink>
+		<FooterLink href={resolve('/faq')}>FAQ</FooterLink>
+		<FooterLink href={resolve('/contatti')}>Contatti</FooterLink>
+		<FooterLink href={resolve('/privacy')}>Privacy</FooterLink>
 		{#if auth.status !== 'authenticated'}
 			<LinkButton onclick={loginToApp} {disabled}>Accedi</LinkButton>
 			<LinkButton onclick={registerToApp} {disabled}>Registrati</LinkButton>

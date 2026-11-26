@@ -37,7 +37,8 @@ public class CharacterBackgroundService {
     private final ObjectMapper objectMapper;
     private final CharacterBackgroundConfig config;
     private final DiaryPageContentValidator contentValidator;
-    private final OwnedResources ownedResources;
+    private final ResourceAccessGuard accessGuard;
+    private final PessimisticLocks pessimisticLocks;
 
     public DetailCharacterBackgroundDTO getCharacterBackground(UUID characterId) {
         GameCharacter character = getPlayerCharacterByIdAndOwner(characterId);
@@ -49,7 +50,7 @@ public class CharacterBackgroundService {
         CharacterBackground background = database.find(CharacterBackground.class)
                 .setLabel("findCharacterBackgroundPreview")
                 .select("preview")
-                .where().eq("character.id", characterId).eq("character.owner.keycloakId", jwtInspector.getSubject())
+                .where().eq("character.id", characterId).eq("character.owner.subject", jwtInspector.getSubject())
                 .findOne();
         if (background == null || StringUtils.isBlank(background.getPreview())) {
             return null;
@@ -66,7 +67,7 @@ public class CharacterBackgroundService {
         }
         CharacterBackground background;
         try (Transaction transaction = database.beginTransaction()) {
-            GameCharacter character = lockGameCharacter(characterId);
+            GameCharacter character = pessimisticLocks.lockGameCharacter(characterId);
             background = findBackgroundByCharacter(characterId);
             long currentVersion = background == null ? VERSION_WITHOUT_BACKGROUND : background.getVersion();
             if (!Objects.equals(currentVersion, request.version())) {
@@ -100,28 +101,15 @@ public class CharacterBackgroundService {
         contentValidator.validate(content);
     }
 
-    private GameCharacter lockGameCharacter(UUID id) {
-        GameCharacter locked = database.find(GameCharacter.class)
-                .setLabel("lockGameCharacter")
-                .select("id")
-                .forUpdate()
-                .where().idEq(id)
-                .findOne();
-        if (locked == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Character not found");
-        }
-        return locked;
-    }
-
     private CharacterBackground findBackgroundByCharacter(UUID characterId) {
         return database.find(CharacterBackground.class)
                 .setLabel("findCharacterBackgroundByCharacter")
-                .where().eq("character.id", characterId).eq("character.owner.keycloakId", jwtInspector.getSubject())
+                .where().eq("character.id", characterId).eq("character.owner.subject", jwtInspector.getSubject())
                 .findOne();
     }
 
     private GameCharacter getPlayerCharacterByIdAndOwner(UUID id) {
-        GameCharacter character = ownedResources.getGameCharacterByIdAndOwner(id);
+        GameCharacter character = accessGuard.getGameCharacterByIdAndOwner(id);
         if (character.getKind() == GameCharacterKind.GAME_MASTER) {
             throw new ServiceException("A game master has no background");
         }

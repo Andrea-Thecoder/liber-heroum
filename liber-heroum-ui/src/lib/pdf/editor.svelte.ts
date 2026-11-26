@@ -1,5 +1,5 @@
-import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import type { PDFScriptingManager, PDFViewer } from 'pdfjs-dist/legacy/web/pdf_viewer.mjs';
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFScriptingManager, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import { documentOptions, loadPdfjs, PDFJS_ASSETS } from '#lib/pdf/pdfjs.js';
 
 export type EditorStatus = 'idle' | 'loading' | 'ready' | 'error';

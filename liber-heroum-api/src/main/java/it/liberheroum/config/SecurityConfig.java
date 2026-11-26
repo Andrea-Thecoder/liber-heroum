@@ -1,9 +1,11 @@
 package it.liberheroum.config;
 
 import it.liberheroum.security.AppRole;
-import it.liberheroum.security.KeycloakRoleConverter;
+import it.liberheroum.security.JwtRoleConverter;
+import it.liberheroum.security.RoleClaimsReader;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -37,27 +39,27 @@ public class SecurityConfig {
     private Duration maxAge = Duration.ofHours(1);
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http)  {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, RoleClaimsReader roleClaimsReader) {
         return http
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
-                        .requestMatchers("/actuator/**").hasRole(AppRole.ADMIN.name())
+                        .requestMatchers(EndpointRequest.to("health", "prometheus")).permitAll()
+                        .requestMatchers(EndpointRequest.toAnyEndpoint()).hasRole(AppRole.ADMIN.name())
                         .requestMatchers(HttpMethod.POST, "/feedback").permitAll()
                         .requestMatchers("/feedback", "/feedback/**").hasRole(AppRole.ADMIN.name())
                         .requestMatchers("/me/payments", "/me/payments/**").hasAnyRole(AppRole.names())
                         .requestMatchers("/me", "/me/**").authenticated()
                         .anyRequest().hasAnyRole(AppRole.names()))
-                .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(jwtAuthenticationConverter())))
+                .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(jwtAuthenticationConverter(roleClaimsReader))))
                 .build();
     }
 
-    private JwtAuthenticationConverter jwtAuthenticationConverter() {
+    private static JwtAuthenticationConverter jwtAuthenticationConverter(RoleClaimsReader roleClaimsReader) {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter());
+        converter.setJwtGrantedAuthoritiesConverter(new JwtRoleConverter(roleClaimsReader));
         return converter;
     }
 

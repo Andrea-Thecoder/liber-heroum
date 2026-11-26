@@ -2,7 +2,6 @@ package it.liberheroum.services;
 
 import io.ebean.Database;
 import io.ebean.ExpressionList;
-import io.ebean.Transaction;
 import it.liberheroum.dto.PagedResultDTO;
 import it.liberheroum.dto.game_character.BaseGameCharacterDTO;
 import it.liberheroum.dto.game_character.DetailGameCharacterDTO;
@@ -11,10 +10,6 @@ import it.liberheroum.dto.game_character.UpdateGameCharacterDTO;
 import it.liberheroum.dto.search.GameCharacterSearchRequest;
 import it.liberheroum.exception.SqlStates;
 import it.liberheroum.model.AppUser;
-import it.liberheroum.model.CharacterSheet;
-import it.liberheroum.model.Diary;
-import it.liberheroum.model.DiaryPage;
-import it.liberheroum.model.Document;
 import it.liberheroum.model.GameCharacter;
 import it.liberheroum.security.JwtInspector;
 import jakarta.persistence.PersistenceException;
@@ -24,9 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -36,16 +29,17 @@ public class GameCharacterService {
     private final Database database;
     private final JwtInspector jwtInspector;
     private final DocumentService documentService;
-    private final DiaryPageTagService tagService;
     private final CharacterBackgroundService backgroundService;
-    private final OwnedResources ownedResources;
+    private final ResourceAccessGuard accessGuard;
+    private final DocumentSlots documentSlots;
+    private final PessimisticLocks pessimisticLocks;
 
     public PagedResultDTO<BaseGameCharacterDTO> findAllGameCharacters(GameCharacterSearchRequest request) {
         ExpressionList<GameCharacter> query = database.find(GameCharacter.class)
                 .setLabel("findAllGameCharacters")
                 .fetch("avatarDocument")
                 .where()
-                .eq("owner.keycloakId", jwtInspector.getSubject());
+                .eq("owner.subject", jwtInspector.getSubject());
         request.applyFilter(query);
         request.applySortAndPagination(query, "name");
         return PagedResultDTO.of(query.findPagedList(),
@@ -54,11 +48,11 @@ public class GameCharacterService {
     }
 
     public DetailGameCharacterDTO getGameCharacterById(UUID id) {
-        return toDetailGameCharacterDTO(ownedResources.getGameCharacterWithAvatarByIdAndOwner(id));
+        return toDetailGameCharacterDTO(accessGuard.getGameCharacterWithAvatarByIdAndOwner(id));
     }
 
     public DetailGameCharacterDTO createGameCharacter(InsertGameCharacterDTO request) {
-        AppUser user = getAppUserBySubject();
+        AppUser user = accessGuard.getCurrentAppUser();
         GameCharacter character = new GameCharacter();
         character.setOwner(user);
         character.setKind(request.kind());
@@ -75,95 +69,39 @@ public class GameCharacterService {
     }
 
     public DetailGameCharacterDTO updateGameCharacter(UUID id, UpdateGameCharacterDTO request) {
-        GameCharacter character = ownedResources.getGameCharacterWithAvatarByIdAndOwner(id);
+        GameCharacter character = accessGuard.getGameCharacterWithAvatarByIdAndOwner(id);
         apply(character, request.name(), request.campaignName(), request.backgroundColor());
         database.save(character);
         return toDetailGameCharacterDTO(character);
     }
 
     public DetailGameCharacterDTO updateGameCharacterAvatar(UUID id, MultipartFile file) {
-        GameCharacter character = ownedResources.getGameCharacterWithAvatarByIdAndOwner(id);
-        Document previous = character.getAvatarDocument();
-        Document avatar = null;
-        try (Transaction transaction = database.beginTransaction()) {
-            avatar = documentService.createImageDocument(file);
-            character.setAvatarDocument(avatar);
-            database.save(character);
-            documentService.deleteDocumentRecord(previous);
-            transaction.commit();
-        } catch (RuntimeException e) {
-            documentService.deleteDocumentFile(avatar);
-            throw e;
-        }
-        documentService.deleteDocumentFile(previous);
+        GameCharacter character = accessGuard.getGameCharacterWithAvatarByIdAndOwner(id);
+        documentSlots.replace(character, character.getAvatarDocument(), character::setAvatarDocument,
+                () -> documentService.createImageDocument(file));
         return toDetailGameCharacterDTO(character);
     }
 
     public void deleteGameCharacterAvatar(UUID id) {
-        GameCharacter character = ownedResources.getGameCharacterWithAvatarByIdAndOwner(id);
-        Document previous = character.getAvatarDocument();
-        try (Transaction transaction = database.beginTransaction()) {
-            character.setAvatarDocument(null);
-            database.save(character);
-            documentService.deleteDocumentRecord(previous);
-            transaction.commit();
-        }
-        documentService.deleteDocumentFile(previous);
+        GameCharacter character = accessGuard.getGameCharacterWithAvatarByIdAndOwner(id);
+        documentSlots.clear(character, character.getAvatarDocument(), character::setAvatarDocument);
     }
 
     public void deleteGameCharacter(UUID id) {
-        GameCharacter character = ownedResources.getGameCharacterWithAvatarByIdAndOwner(id);
-        List<Document> documents = new ArrayList<>();
-        if (character.getAvatarDocument() != null) {
-            documents.add(character.getAvatarDocument());
-        }
-        try (Transaction transaction = database.beginTransaction()) {
-            List<CharacterSheet> sheets = database.find(CharacterSheet.class)
-                    .setLabel("deleteGameCharacterSheets")
-                    .fetch("document")
-                    .where().eq("character.id", character.getId())
-                    .findList();
-            if (!sheets.isEmpty()) {
-                sheets.stream().map(CharacterSheet::getDocument).forEach(documents::add);
-                database.deleteAll(sheets);
-            }
-            List<Diary> diaries = database.find(Diary.class)
-                    .setLabel("deleteGameCharacter")
-                    .fetch("coverDocument")
-                    .where().eq("character.id", character.getId())
-                    .findList();
-            if (!diaries.isEmpty()) {
-                List<UUID> diaryIds = diaries.stream().map(Diary::getId).toList();
-                tagService.deleteDiaryPageTagsByDiaries(diaryIds);
-                database.find(DiaryPage.class)
-                        .setLabel("deleteGameCharacterPages")
-                        .where().in("diary.id", diaryIds)
-                        .delete();
-                diaries.stream().map(Diary::getCoverDocument).filter(Objects::nonNull).forEach(documents::add);
-                database.deleteAll(diaries);
-            }
-            database.delete(character);
-            documents.forEach(documentService::deleteDocumentRecord);
-            transaction.commit();
+        GameCharacter character = accessGuard.getGameCharacterByIdAndOwner(id);
+        try {
+            documentSlots.deleteWithDocuments(
+                    () -> pessimisticLocks.lockGameCharacter(character.getId()),
+                    () -> documentSlots.findDocumentsOfGameCharacters(List.of(character.getId())),
+                    () -> database.delete(character));
         } catch (PersistenceException e) {
             if (SqlStates.isForeignKeyViolation(e)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "The character changed while it was being deleted, try again");
             }
             throw e;
         }
-        documents.forEach(documentService::deleteDocumentFile);
     }
 
-    private AppUser getAppUserBySubject() {
-        AppUser user = database.find(AppUser.class)
-                .setLabel("getAppUserBySubject")
-                .where().eq("keycloakId", jwtInspector.getSubject())
-                .findOne();
-        if (user == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
-        return user;
-    }
 
     private DetailGameCharacterDTO toDetailGameCharacterDTO(GameCharacter character) {
         return DetailGameCharacterDTO.from(character,

@@ -13,7 +13,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -114,24 +113,6 @@ class RealHttpIT extends AbstractIntegrationTest {
     @Test
     void createFeedback_validFormWithoutTokenOverTomcat_returnsCreated() {
         HttpResponse<String> response = postFeedbackFrom("127.0.0.2", feedbackForm(PNG));
-
-        assertThat(response.statusCode()).isEqualTo(201);
-    }
-
-    @Test
-    void createFeedback_sixthRequestFromSameAddressOverTomcat_returnsTooManyRequests() {
-        IntStream.range(0, 5).forEach(index -> postFeedbackFrom("127.0.0.3", new byte[0]));
-
-        HttpResponse<String> response = postFeedbackFrom("127.0.0.3", new byte[0]);
-
-        assertThat(response.statusCode()).isEqualTo(429);
-    }
-
-    @Test
-    void createFeedback_limitReachedByOtherAddressOverTomcat_returnsCreated() {
-        IntStream.range(0, 6).forEach(index -> postFeedbackFrom("127.0.0.4", new byte[0]));
-
-        HttpResponse<String> response = postFeedbackFrom("127.0.0.5", feedbackForm(PNG));
 
         assertThat(response.statusCode()).isEqualTo(201);
     }

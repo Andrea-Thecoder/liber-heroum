@@ -29,7 +29,7 @@ class SchemaIT extends AbstractIntegrationTest {
     private void insertCharacterWithColor(String color) {
         transactions.executeWithoutResult(status -> {
             UUID userId = UUID.randomUUID();
-            jdbc.update("insert into app_user (id, is_premium, created_at, updated_at, version, keycloak_id, created_by, updated_by) "
+            jdbc.update("insert into app_user (id, is_premium, created_at, updated_at, version, subject, created_by, updated_by) "
                     + "values (?, false, now(), now(), 0, 'kc-schema-test', 'test', 'test')", userId);
             jdbc.update("insert into game_character (id, owner_id, created_at, updated_at, version, name, kind, background_color, created_by, updated_by) "
                     + "values (?, ?, now(), now(), 0, 'Aragorn', 'PLAYER', ?, 'test', 'test')", UUID.randomUUID(), userId, color);
@@ -41,7 +41,7 @@ class SchemaIT extends AbstractIntegrationTest {
         transactions.executeWithoutResult(status -> {
             UUID userId = UUID.randomUUID();
             UUID characterId = UUID.randomUUID();
-            jdbc.update("insert into app_user (id, is_premium, created_at, updated_at, version, keycloak_id, created_by, updated_by) "
+            jdbc.update("insert into app_user (id, is_premium, created_at, updated_at, version, subject, created_by, updated_by) "
                     + "values (?, false, now(), now(), 0, 'kc-schema-test', 'test', 'test')", userId);
             jdbc.update("insert into game_character (id, owner_id, created_at, updated_at, version, name, kind, created_by, updated_by) "
                     + "values (?, ?, now(), now(), 0, 'Aragorn', 'PLAYER', 'test', 'test')", characterId, userId);
@@ -56,7 +56,7 @@ class SchemaIT extends AbstractIntegrationTest {
             UUID userId = UUID.randomUUID();
             UUID characterId = UUID.randomUUID();
             UUID documentId = UUID.randomUUID();
-            jdbc.update("insert into app_user (id, is_premium, created_at, updated_at, version, keycloak_id, created_by, updated_by) "
+            jdbc.update("insert into app_user (id, is_premium, created_at, updated_at, version, subject, created_by, updated_by) "
                     + "values (?, false, now(), now(), 0, 'kc-schema-test', 'test', 'test')", userId);
             jdbc.update("insert into game_character (id, owner_id, created_at, updated_at, version, name, kind, created_by, updated_by) "
                     + "values (?, ?, now(), now(), 0, 'Aragorn', 'PLAYER', 'test', 'test')", characterId, userId);
@@ -74,7 +74,7 @@ class SchemaIT extends AbstractIntegrationTest {
         UUID userId = UUID.randomUUID();
         UUID characterId = UUID.randomUUID();
         UUID diaryId = UUID.randomUUID();
-        jdbc.update("insert into app_user (id, is_premium, created_at, updated_at, version, keycloak_id, created_by, updated_by) "
+        jdbc.update("insert into app_user (id, is_premium, created_at, updated_at, version, subject, created_by, updated_by) "
                 + "values (?, false, now(), now(), 0, 'kc-schema-test', 'test', 'test')", userId);
         jdbc.update("insert into game_character (id, owner_id, created_at, updated_at, version, name, kind, created_by, updated_by) "
                 + "values (?, ?, now(), now(), 0, 'Aragorn', 'PLAYER', 'test', 'test')", characterId, userId);
@@ -156,8 +156,8 @@ class SchemaIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void gameCharacterOwnerForeignKey_schema_restrictsDelete() {
-        assertThat(deleteRuleOf("fk_game_character_owner_id")).isEqualTo("r");
+    void gameCharacterOwnerForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_game_character_owner_id")).isEqualTo("c");
     }
 
     @Test
@@ -176,8 +176,18 @@ class SchemaIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void characterSheetCharacterForeignKey_schema_restrictsDelete() {
-        assertThat(deleteRuleOf("fk_character_sheet_character_id")).isEqualTo("r");
+    void characterSheetCharacterForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_character_sheet_character_id")).isEqualTo("c");
+    }
+
+    @Test
+    void diaryCharacterForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_diary_character_id")).isEqualTo("c");
+    }
+
+    @Test
+    void diaryPageDiaryForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_diary_page_diary_id")).isEqualTo("c");
     }
 
     @Test
@@ -191,13 +201,13 @@ class SchemaIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void diaryPageTagDiaryForeignKey_schema_restrictsDelete() {
-        assertThat(deleteRuleOf("fk_diary_page_tag_diary_id")).isEqualTo("r");
+    void diaryPageTagDiaryForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_diary_page_tag_diary_id")).isEqualTo("c");
     }
 
     @Test
-    void diaryPageTagPageForeignKey_schema_restrictsDelete() {
-        assertThat(deleteRuleOf("fk_diary_page_tag_page_id_diary_id")).isEqualTo("r");
+    void diaryPageTagPageForeignKey_schema_cascadesOnDelete() {
+        assertThat(deleteRuleOf("fk_diary_page_tag_page_id_diary_id")).isEqualTo("c");
     }
 
     @Test

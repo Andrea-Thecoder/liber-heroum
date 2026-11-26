@@ -1,6 +1,7 @@
 package it.liberheroum.unit.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.mock;
 
@@ -84,7 +85,10 @@ class ExceptionMapperTest {
     void mapAuthException_authenticationFailure_returnsUnauthorizedHidingOriginalMessage() {
         ResponseEntity<ExceptionResponse> response = mapper.mapAuthException(new BadCredentialsException("signature mismatch for kid 42"));
 
-        assertThat(List.of(response.getStatusCode().value(), firstViolation(response))).containsExactly(401, "Authentication required");
+        assertSoftly(softly -> {
+            softly.assertThat(response.getStatusCode().value()).isEqualTo(401);
+            softly.assertThat(firstViolation(response)).isEqualTo("Authentication required");
+        });
     }
 
     @Test
@@ -114,7 +118,10 @@ class ExceptionMapperTest {
 
         ResponseEntity<ExceptionResponse> response = mapper.mapHttpMessageNotReadableException(ex);
 
-        assertThat(List.of(response.getStatusCode().value(), firstViolation(response))).containsExactly(400, "Malformed JSON request");
+        assertSoftly(softly -> {
+            softly.assertThat(response.getStatusCode().value()).isEqualTo(400);
+            softly.assertThat(firstViolation(response)).isEqualTo("Malformed JSON request");
+        });
     }
 
     @Test
@@ -156,7 +163,10 @@ class ExceptionMapperTest {
 
         ResponseEntity<ExceptionResponse> response = mapper.mapMethodArgumentTypeMismatchException(ex);
 
-        assertThat(List.of(response.getStatusCode().value(), firstViolation(response))).containsExactly(400, "Invalid value for parameter: id");
+        assertSoftly(softly -> {
+            softly.assertThat(response.getStatusCode().value()).isEqualTo(400);
+            softly.assertThat(firstViolation(response)).isEqualTo("Invalid value for parameter: id");
+        });
     }
 
     private static BindException bindException(FieldError... errors) {
@@ -236,32 +246,43 @@ class ExceptionMapperTest {
     void mapMaxUploadSizeExceededException_tooLarge_returnsContentTooLargeWithMessage() {
         ResponseEntity<ExceptionResponse> response = mapper.mapMaxUploadSizeExceededException(new MaxUploadSizeExceededException(5_000_000));
 
-        assertThat(List.of(response.getStatusCode().value(), response.getBody().getTitle(), firstViolation(response)))
-                .containsExactly(413, "CONTENT_TOO_LARGE", "File too large");
+        assertSoftly(softly -> {
+            softly.assertThat(response.getStatusCode().value()).isEqualTo(413);
+            softly.assertThat(response.getBody().getTitle()).isEqualTo("CONTENT_TOO_LARGE");
+            softly.assertThat(firstViolation(response)).isEqualTo("File too large");
+        });
     }
 
     @Test
     void mapOptimisticLockException_concurrentChange_returnsConflictWithMessage() {
         ResponseEntity<ExceptionResponse> response = mapper.mapOptimisticLockException(new OptimisticLockException("version changed"));
 
-        assertThat(List.of(response.getStatusCode().value(), response.getBody().getTitle(), firstViolation(response)))
-                .containsExactly(409, "CONFLICT", "The resource was modified elsewhere, reload it");
+        assertSoftly(softly -> {
+            softly.assertThat(response.getStatusCode().value()).isEqualTo(409);
+            softly.assertThat(response.getBody().getTitle()).isEqualTo("CONFLICT");
+            softly.assertThat(firstViolation(response)).isEqualTo("The resource was modified elsewhere, reload it");
+        });
     }
 
     @Test
     void mapRuntimeException_unexpectedError_returnsInternalServerErrorHidingDetails() {
         ResponseEntity<ExceptionResponse> response = mapper.mapRuntimeException(new IllegalStateException("password=secret"));
 
-        assertThat(List.of(response.getStatusCode().value(), firstViolation(response))).containsExactly(500, "An unexpected error occurred");
+        assertSoftly(softly -> {
+            softly.assertThat(response.getStatusCode().value()).isEqualTo(500);
+            softly.assertThat(firstViolation(response)).isEqualTo("An unexpected error occurred");
+        });
     }
 
     @Test
     void mapRecentAuthenticationRequired_oldLogin_returnsUnauthorizedWithStepUpChallenge() {
         ResponseEntity<ExceptionResponse> response = mapper.mapRecentAuthenticationRequired(new RecentAuthenticationRequiredException(300));
 
-        assertThat(List.of(response.getStatusCode().value(), firstViolation(response), response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)))
-                .containsExactly(401, "Recent authentication required",
-                        "Bearer error=\"insufficient_user_authentication\", "
+        assertSoftly(softly -> {
+            softly.assertThat(response.getStatusCode().value()).isEqualTo(401);
+            softly.assertThat(firstViolation(response)).isEqualTo("Recent authentication required");
+            softly.assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isEqualTo("Bearer error=\"insufficient_user_authentication\", "
                                 + "error_description=\"A more recent authentication is required\", max_age=\"300\"");
+        });
     }
 }
