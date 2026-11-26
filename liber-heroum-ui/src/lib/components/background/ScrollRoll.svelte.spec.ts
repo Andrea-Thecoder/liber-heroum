@@ -2,14 +2,11 @@ import '../../../routes/layout.css';
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import ScrollRoll from './ScrollRoll.svelte';
+import { required } from '#lib/test-support.js';
 
 function roll(edge: 'top' | 'bottom', diameter: number): HTMLElement {
 	const { container } = render(ScrollRoll, { diameter, edge });
-	const found = container.querySelector<HTMLElement>(`[data-roll="${edge}"]`);
-	if (found === null) {
-		throw new Error('the roll is missing');
-	}
-	return found;
+	return required(container.querySelector<HTMLElement>(`[data-roll="${edge}"]`), 'Rotolo');
 }
 
 describe('ScrollRoll', () => {

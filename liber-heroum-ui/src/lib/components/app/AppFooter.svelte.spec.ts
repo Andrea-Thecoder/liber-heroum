@@ -34,14 +34,15 @@ describe('AppFooter', () => {
 			.toHaveAttribute('href', '/privacy');
 	});
 
-	it('keeps every link at least 44 px tall for the thumb', () => {
+	it('keeps every link at least 44 by 44 px for the thumb', () => {
 		render(AppFooter);
 
-		const heights = Array.from(document.querySelectorAll('footer a')).map(
-			(link) => link.getBoundingClientRect().height
-		);
+		const sides = page
+			.getByRole('link')
+			.elements()
+			.flatMap((link) => [link.getBoundingClientRect().width, link.getBoundingClientRect().height]);
 
-		expect(Math.min(...heights)).toBeGreaterThanOrEqual(44);
+		expect(Math.min(...sides)).toBeGreaterThanOrEqual(44);
 	});
 
 	it('puts the links on at most two rows on a phone', async () => {
@@ -49,9 +50,11 @@ describe('AppFooter', () => {
 		render(AppFooter);
 
 		const rows = new Set(
-			Array.from(document.querySelectorAll('footer nav a')).map((link) =>
-				Math.round(link.getBoundingClientRect().top)
-			)
+			page
+				.getByRole('navigation', { name: 'Pagine informative' })
+				.getByRole('link')
+				.elements()
+				.map((link) => Math.round(link.getBoundingClientRect().top))
 		);
 
 		expect(rows.size).toBeLessThanOrEqual(2);
@@ -61,9 +64,11 @@ describe('AppFooter', () => {
 		render(AppFooter);
 
 		const rows = new Set(
-			Array.from(document.querySelectorAll('footer nav a')).map((link) =>
-				Math.round(link.getBoundingClientRect().top)
-			)
+			page
+				.getByRole('navigation', { name: 'Pagine informative' })
+				.getByRole('link')
+				.elements()
+				.map((link) => Math.round(link.getBoundingClientRect().top))
 		);
 
 		expect(rows.size).toBe(1);

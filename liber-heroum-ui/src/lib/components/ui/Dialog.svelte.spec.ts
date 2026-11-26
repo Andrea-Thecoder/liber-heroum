@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import '../../../routes/layout.css';
 import DialogHarness from './DialogHarness.svelte';
+import { required } from '#lib/test-support.js';
 
 describe('Dialog', () => {
 	beforeEach(async () => {
@@ -16,11 +17,7 @@ describe('Dialog', () => {
 	}
 
 	function dialogElement(): HTMLDialogElement {
-		const element = document.querySelector('dialog');
-		if (element === null) {
-			throw new Error('dialog missing');
-		}
-		return element;
+		return required(document.querySelector('dialog'), 'Dialog');
 	}
 
 	function backdropPoint(): { x: number; y: number } {

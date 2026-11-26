@@ -117,7 +117,7 @@ beforeEach(async () => {
 	api.POST.mockReset();
 	api.PUT.mockReset();
 	navigation.goto.mockImplementation(async (href: unknown, options: unknown) => {
-		await new Promise((resolve) => setTimeout(resolve, 20));
+		await Promise.resolve();
 		if ((options as { shallow?: boolean } | undefined)?.shallow === true) {
 			setShallowUrl(String(href));
 		} else {
@@ -984,6 +984,7 @@ describe('formatting bar', () => {
 		await page.getByRole('textbox', { name: 'Pagina 2' }).click();
 		await userEvent.keyboard('{Control>}{Home}{/Control}');
 		await userEvent.keyboard('{Backspace}');
+		await expect.element(page.getByRole('textbox', { name: 'Pagina 1' })).toHaveFocus();
 		await userEvent.keyboard('X');
 
 		await expect

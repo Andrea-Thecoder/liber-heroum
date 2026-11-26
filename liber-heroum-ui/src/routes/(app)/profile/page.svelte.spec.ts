@@ -1,5 +1,5 @@
 import { page, userEvent } from 'vitest/browser';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { rememberPendingAction, takePendingAction } from '#lib/ui/pending-action.js';
 import '../../layout.css';
@@ -385,15 +385,20 @@ describe('profile page', () => {
 	});
 
 	it('turns the resend button off and counts down after sending', async () => {
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
 		session.pending = 'nuova@esempio.it';
 		renderPage();
 
 		await page.getByRole('button', { name: 'Rinvia email' }).click();
-
 		const button = page.getByRole('button', { name: /Rinvia email tra \d+ s/ });
-		await expect.element(button).toBeDisabled();
 		await expect.element(button).toHaveTextContent('tra 60 s');
-		await expect.poll(() => document.body.textContent, { timeout: 3000 }).toMatch(/tra (59|58) s/);
+		await vi.advanceTimersByTimeAsync(1000);
+
+		await expect.element(button).toBeDisabled();
+		await expect.element(button).toHaveTextContent('tra 59 s');
 	});
 
 	it('asks to wait when the mail was sent less than a minute ago', async () => {

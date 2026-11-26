@@ -4,16 +4,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import '../../../routes/layout.css';
 import PageSlide from './PageSlide.svelte';
+import { required } from '#lib/test-support.js';
 
 const away = createRawSnippet(() => ({ render: () => '<p>Vecchia</p>' }));
 const arrive = createRawSnippet(() => ({ render: () => '<p>Nuova</p>' }));
 
 function frame(): Element {
-	const element = document.querySelector('.page-slide-arrive')?.parentElement;
-	if (element === null || element === undefined) {
-		throw new Error('slide missing');
-	}
-	return element;
+	return required(document.querySelector('.page-slide-arrive')?.parentElement, 'Pagina in arrivo');
 }
 
 describe('PageSlide', () => {

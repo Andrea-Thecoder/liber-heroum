@@ -21,6 +21,7 @@ vi.mock('#lib/ui/flash-error.js', () => ({ rememberError: remember, recallError:
 vi.mock('$app/paths', () => ({ resolve: (path: string) => path }));
 
 import { extractRoles } from '#lib/auth/roles.js';
+import { settle } from '#lib/test-support.js';
 import { load } from './+layout.js';
 
 const runLoad = (): Promise<unknown> => (load as unknown as () => Promise<unknown>)();
@@ -28,14 +29,7 @@ const runLoad = (): Promise<unknown> => (load as unknown as () => Promise<unknow
 const PENDING = Symbol('pending');
 
 function settled(): Promise<unknown> {
-	return Promise.race([
-		runLoad(),
-		new Promise((resolve) => {
-			setTimeout(() => {
-				resolve(PENDING);
-			}, 30);
-		})
-	]);
+	return Promise.race([runLoad(), settle().then(() => PENDING)]);
 }
 
 describe('app layout load', () => {

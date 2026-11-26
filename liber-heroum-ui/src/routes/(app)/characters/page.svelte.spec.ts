@@ -347,16 +347,14 @@ describe('areas', () => {
 		expect(api.GET.mock.calls.length).toBe(calls);
 	});
 
-	it('fits the coming soon area on every width', async () => {
-		for (const width of [280, 360, 768, 1280, 3440]) {
-			await page.viewport(width, 800);
-			const view = render(Page);
-			await page.getByRole('tab', { name: 'Le mie campagne' }).click();
-			await expect.element(page.getByText('Coming Soon')).toBeVisible();
+	it.each([280, 360, 768, 1280, 3440])('fits the coming soon area at %i px', async (width) => {
+		await page.viewport(width, 800);
+		render(Page);
 
-			expect(document.documentElement.scrollWidth - document.documentElement.clientWidth).toBe(0);
-			await view.unmount();
-		}
+		await page.getByRole('tab', { name: 'Le mie campagne' }).click();
+
+		await expect.element(page.getByText('Coming Soon')).toBeVisible();
+		expect(document.documentElement.scrollWidth - document.documentElement.clientWidth).toBe(0);
 	});
 });
 

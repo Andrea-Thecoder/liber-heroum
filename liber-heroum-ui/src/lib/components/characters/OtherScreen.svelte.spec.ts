@@ -24,12 +24,18 @@ describe('OtherScreen', () => {
 			.toHaveAttribute('aria-current', 'page');
 	});
 
-	it('previews the three kinds of content that are coming', async () => {
-		render(OtherScreen, { character });
+	it.each(['Mappe', 'Immagini', 'Appunti e documenti'])(
+		'previews the %s that are coming',
+		async (title) => {
+			render(OtherScreen, { character });
 
-		for (const title of ['Mappe', 'Immagini', 'Appunti e documenti']) {
 			await expect.element(page.getByRole('heading', { name: title })).toBeVisible();
 		}
+	);
+
+	it('shows a picture for each preview', () => {
+		render(OtherScreen, { character });
+
 		expect(page.getByRole('img', { name: /in arrivo/ }).elements()).toHaveLength(3);
 	});
 
@@ -37,9 +43,11 @@ describe('OtherScreen', () => {
 		render(OtherScreen, { character });
 
 		const buttons = page.getByRole('button', { name: 'In arrivo' });
-		expect(buttons.elements()).toHaveLength(3);
-		for (const button of buttons.elements()) {
-			expect((button as HTMLButtonElement).disabled).toBe(true);
-		}
+
+		expect(buttons.elements().map((button) => (button as HTMLButtonElement).disabled)).toEqual([
+			true,
+			true,
+			true
+		]);
 	});
 });

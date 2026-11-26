@@ -32,12 +32,7 @@ function percent(value: string): number {
 }
 
 function zoomOutput(): string {
-	return (
-		page
-			.getByRole('slider', { name: 'Ingrandimento' })
-			.element()
-			.parentElement?.querySelector('output')?.textContent ?? ''
-	);
+	return page.getByRole('status').element().textContent;
 }
 
 describe('ImageCropper', () => {

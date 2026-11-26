@@ -46,7 +46,10 @@ describe('FaqBrowser', () => {
 	it('opens only the first question at the start', () => {
 		render(FaqBrowser, { groups, query: '' });
 
-		const open = Array.from(document.querySelectorAll('details')).map((item) => item.open);
+		const open = page
+			.getByRole('group')
+			.elements()
+			.map((item) => (item as HTMLDetailsElement).open);
 
 		expect(open).toEqual([true, false, false]);
 	});
@@ -100,7 +103,10 @@ describe('FaqBrowser', () => {
 	it('opens the matching questions so the answer can be read', () => {
 		render(FaqBrowser, { groups, query: 'risposta' });
 
-		const open = Array.from(document.querySelectorAll('details')).map((item) => item.open);
+		const open = page
+			.getByRole('group')
+			.elements()
+			.map((item) => (item as HTMLDetailsElement).open);
 
 		expect(open).toEqual([true, true, true]);
 	});

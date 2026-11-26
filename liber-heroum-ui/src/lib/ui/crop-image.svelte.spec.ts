@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { loadImage, renderCrop } from '#lib/ui/crop-image.js';
+import { required } from '#lib/test-support.js';
 
 async function splitImage(): Promise<string> {
 	const canvas = document.createElement('canvas');
 	canvas.width = 100;
 	canvas.height = 50;
-	const context = canvas.getContext('2d');
-	if (context === null) {
-		throw new Error('Canvas non disponibile.');
-	}
+	const context = required(canvas.getContext('2d'), 'Canvas');
 	context.fillStyle = '#ff0000';
 	context.fillRect(0, 0, 50, 50);
 	context.fillStyle = '#0000ff';
@@ -16,10 +14,7 @@ async function splitImage(): Promise<string> {
 	const blob = await new Promise<Blob | null>((resolve) => {
 		canvas.toBlob(resolve, 'image/png');
 	});
-	if (blob === null) {
-		throw new Error('Impossibile creare l’immagine di prova.');
-	}
-	return URL.createObjectURL(blob);
+	return URL.createObjectURL(required(blob, 'Immagine di prova'));
 }
 
 async function centerPixel(file: File): Promise<Uint8ClampedArray> {
@@ -27,10 +22,7 @@ async function centerPixel(file: File): Promise<Uint8ClampedArray> {
 	const canvas = document.createElement('canvas');
 	canvas.width = bitmap.width;
 	canvas.height = bitmap.height;
-	const context = canvas.getContext('2d');
-	if (context === null) {
-		throw new Error('Canvas non disponibile.');
-	}
+	const context = required(canvas.getContext('2d'), 'Canvas');
 	context.drawImage(bitmap, 0, 0);
 	return context.getImageData(Math.floor(bitmap.width / 2), Math.floor(bitmap.height / 2), 1, 1)
 		.data;
