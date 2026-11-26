@@ -1,0 +1,125 @@
+package it.liberheroum.services;
+
+import io.ebean.Database;
+import io.ebean.ExpressionList;
+import io.ebean.Transaction;
+import it.liberheroum.config.CharacterSheetConfig;
+import it.liberheroum.dto.PagedResultDTO;
+import it.liberheroum.dto.character_sheet.BaseCharacterSheetDTO;
+import it.liberheroum.dto.character_sheet.DetailCharacterSheetDTO;
+import it.liberheroum.dto.character_sheet.InsertCharacterSheetDTO;
+import it.liberheroum.dto.character_sheet.UpdateCharacterSheetDTO;
+import it.liberheroum.dto.search.CharacterSheetSearchRequest;
+import it.liberheroum.exception.ServiceException;
+import it.liberheroum.exception.SqlStates;
+import it.liberheroum.model.CharacterSheet;
+import it.liberheroum.model.Document;
+import it.liberheroum.model.GameCharacter;
+import jakarta.persistence.PersistenceException;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class CharacterSheetService {
+
+    private final Database database;
+    private final DocumentService documentService;
+    private final CharacterSheetConfig config;
+    private final ResourceAccessGuard accessGuard;
+    private final DocumentSlots documentSlots;
+    private final PessimisticLocks pessimisticLocks;
+
+    public PagedResultDTO<BaseCharacterSheetDTO> findAllCharacterSheetsByCharacter(UUID characterId,
+                                                                                    CharacterSheetSearchRequest request) {
+        GameCharacter character = accessGuard.getGameCharacterByIdAndOwner(characterId);
+        ExpressionList<CharacterSheet> query = database.find(CharacterSheet.class)
+                .setLabel("findAllCharacterSheetsByCharacter")
+                .fetch("document")
+                .where().eq("character.id", character.getId());
+        request.applyFilter(query);
+        request.applySortAndPagination(query, "createdAt");
+        return PagedResultDTO.of(query.findPagedList(), this::toBaseCharacterSheetDTO);
+    }
+
+    public DetailCharacterSheetDTO getCharacterSheetById(UUID id) {
+        return toDetailCharacterSheetDTO(accessGuard.getCharacterSheetWithDocumentByIdAndOwner(id));
+    }
+
+    public DetailCharacterSheetDTO createCharacterSheet(UUID characterId, InsertCharacterSheetDTO request,
+                                                        MultipartFile file) {
+        GameCharacter character = accessGuard.getGameCharacterByIdAndOwner(characterId);
+        CharacterSheet sheet = new CharacterSheet();
+        sheet.setCharacter(character);
+        apply(sheet, request.title(), request.system());
+        Document document = null;
+        try (Transaction transaction = database.beginTransaction()) {
+            pessimisticLocks.lockGameCharacter(character.getId());
+            int count = database.find(CharacterSheet.class)
+                    .setLabel("createCharacterSheet")
+                    .where().eq("character.id", character.getId())
+                    .findCount();
+            if (count >= config.getMaxSheetsPerCharacter()) {
+                throw new ServiceException("The character has too many sheets (" + config.getMaxSheetsPerCharacter() + ")");
+            }
+            document = documentService.createPdfDocument(file);
+            sheet.setDocument(document);
+            database.save(sheet);
+            transaction.commit();
+        } catch (PersistenceException e) {
+            documentService.deleteDocumentFile(document);
+            if (SqlStates.isForeignKeyViolation(e)) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Character not found");
+            }
+            throw e;
+        } catch (RuntimeException e) {
+            documentService.deleteDocumentFile(document);
+            throw e;
+        }
+        return toDetailCharacterSheetDTO(sheet);
+    }
+
+    public DetailCharacterSheetDTO updateCharacterSheet(UUID id, UpdateCharacterSheetDTO request) {
+        CharacterSheet sheet = accessGuard.getCharacterSheetWithDocumentByIdAndOwner(id);
+        apply(sheet, request.title(), request.system());
+        database.save(sheet);
+        return toDetailCharacterSheetDTO(sheet);
+    }
+
+    public DetailCharacterSheetDTO updateCharacterSheetFile(UUID id, MultipartFile file) {
+        CharacterSheet sheet = accessGuard.getCharacterSheetWithDocumentByIdAndOwner(id);
+        documentSlots.replace(sheet, sheet.getDocument(), sheet::setDocument,
+                () -> documentService.createPdfDocument(file));
+        return toDetailCharacterSheetDTO(sheet);
+    }
+
+    public void deleteCharacterSheet(UUID id) {
+        CharacterSheet sheet = accessGuard.getCharacterSheetWithDocumentByIdAndOwner(id);
+        documentSlots.deleteWithDocuments(List.of(sheet.getDocument()), () -> database.delete(sheet));
+    }
+
+
+    private BaseCharacterSheetDTO toBaseCharacterSheetDTO(CharacterSheet sheet) {
+        return BaseCharacterSheetDTO.from(sheet,
+                documentService.getDocumentUrl(sheet.getDocument()),
+                documentService.getDocumentDownloadUrl(sheet.getDocument()));
+    }
+
+    private DetailCharacterSheetDTO toDetailCharacterSheetDTO(CharacterSheet sheet) {
+        return DetailCharacterSheetDTO.from(sheet,
+                documentService.getDocumentUrl(sheet.getDocument()),
+                documentService.getDocumentDownloadUrl(sheet.getDocument()));
+    }
+
+    private void apply(CharacterSheet sheet, String title, String system) {
+        sheet.setTitle(StringUtils.trim(title));
+        sheet.setGameSystem(StringUtils.trimToNull(system));
+    }
+}

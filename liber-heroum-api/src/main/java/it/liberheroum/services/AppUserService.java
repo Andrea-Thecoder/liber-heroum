@@ -1,0 +1,158 @@
+package it.liberheroum.services;
+
+import io.ebean.Database;
+import io.ebean.DuplicateKeyException;
+import it.liberheroum.config.AppUserConfig;
+import it.liberheroum.dto.app_user.DetailAppUserDTO;
+import it.liberheroum.dto.app_user.UpdateSettingsAppUserDTO;
+import it.liberheroum.validation.StorableText;
+import it.liberheroum.exception.ServiceException;
+import it.liberheroum.exception.SqlStates;
+import it.liberheroum.model.AppUser;
+import it.liberheroum.model.Document;
+import it.liberheroum.security.IdentityProviderAdmin;
+import it.liberheroum.security.JwtInspector;
+import it.liberheroum.security.RecentAuthentication;
+import jakarta.persistence.PersistenceException;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.ObjectMapper;
+
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class AppUserService {
+
+    private final Database database;
+    private final JwtInspector jwtInspector;
+    private final ObjectMapper objectMapper;
+    private final AppUserConfig config;
+    private final DocumentService documentService;
+    private final RecentAuthentication recentAuthentication;
+    private final IdentityProviderAdmin identityProviderAdmin;
+    private final DocumentSlots documentSlots;
+    private final PessimisticLocks pessimisticLocks;
+    private final ResourceAccessGuard accessGuard;
+
+    public UUID createAppUser() {
+        String subject = jwtInspector.getSubject();
+        String email = jwtInspector.getEmail();
+        if (StringUtils.isBlank(email)) {
+            throw new ServiceException("The token has no email address");
+        }
+        AppUser user = findAppUserBySubject(subject)
+                .map(existing -> updateAppUserEmail(existing, email))
+                .orElseGet(() -> insertAppUser(subject, email));
+        return user.getId();
+    }
+
+    public DetailAppUserDTO getAppUserBySubject() {
+        AppUser user = accessGuard.getCurrentAppUser();
+        return DetailAppUserDTO.from(user, documentService.getDocumentUrl(user.getAvatarDocument()));
+    }
+
+    public String updateAppUserAvatar(MultipartFile file) {
+        AppUser user = accessGuard.getCurrentAppUser();
+        Document avatar = documentSlots.replace(user, user.getAvatarDocument(), user::setAvatarDocument,
+                () -> documentService.createImageDocument(file));
+        return documentService.getDocumentUrl(avatar);
+    }
+
+    public void deleteAppUserAvatar() {
+        AppUser user = accessGuard.getCurrentAppUser();
+        documentSlots.clear(user, user.getAvatarDocument(), user::setAvatarDocument);
+    }
+
+    public void deleteAppUser() {
+        recentAuthentication.require(config.getDeleteMaxAuthAge());
+        String subject = jwtInspector.getSubject();
+        identityProviderAdmin.deleteUser(subject);
+        Optional<AppUser> found = findAppUserBySubject(subject);
+        if (found.isEmpty()) {
+            return;
+        }
+        AppUser user = found.get();
+        try {
+            documentSlots.deleteWithDocuments(
+                    () -> pessimisticLocks.lockAppUser(user.getId()),
+                    () -> documentSlots.findDocumentsOfAppUser(user.getId()),
+                    () -> database.delete(user));
+        } catch (PersistenceException e) {
+            if (SqlStates.isForeignKeyViolation(e)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "The account changed while it was being deleted, try again");
+            }
+            throw e;
+        }
+    }
+
+    public Map<String, Object> updateAppUserSettings(UpdateSettingsAppUserDTO settings) {
+        AppUser user = accessGuard.getCurrentAppUser();
+        Map<String, Object> merged = user.getSettings() == null ? new HashMap<>() : new HashMap<>(user.getSettings());
+        settings.settings().forEach((key, value) -> {
+            if (value == null) {
+                merged.remove(key);
+            } else {
+                merged.put(key, value);
+            }
+        });
+        validateSettings(merged);
+        user.setSettings(merged.isEmpty() ? null : merged);
+        database.save(user);
+        return merged;
+    }
+
+
+    private void validateSettings(Map<String, Object> settings) {
+        if (containsUnstorableText(settings)) {
+            throw new ServiceException("Settings contain characters that cannot be stored");
+        }
+        if (objectMapper.writeValueAsBytes(settings).length > config.getMaxSettingsSize().toBytes()) {
+            throw new ServiceException("Settings too large");
+        }
+    }
+
+    private static boolean containsUnstorableText(Object value) {
+        return switch (value) {
+            case String text -> !StorableText.isStorable(text);
+            case Map<?, ?> map -> map.entrySet().stream()
+                    .anyMatch(entry -> containsUnstorableText(entry.getKey()) || containsUnstorableText(entry.getValue()));
+            case Collection<?> items -> items.stream().anyMatch(AppUserService::containsUnstorableText);
+            case null, default -> false;
+        };
+    }
+
+    private AppUser insertAppUser(String subject, String email) {
+        AppUser user = new AppUser();
+        user.setSubject(subject);
+        user.setEmail(email);
+        try {
+            database.save(user);
+            return user;
+        } catch (DuplicateKeyException e) {
+            return findAppUserBySubject(subject)
+                    .orElseThrow(() -> new ServiceException("User not found"));
+        }
+    }
+
+    private AppUser updateAppUserEmail(AppUser user, String email) {
+        if (!Objects.equals(user.getEmail(), email)) {
+            user.setEmail(email);
+            database.save(user);
+        }
+        return user;
+    }
+
+    private Optional<AppUser> findAppUserBySubject(String subject) {
+        return database.find(AppUser.class).setLabel("findAppUserBySubject").fetch("avatarDocument").where().eq("subject", subject).findOneOrEmpty();
+    }
+}
